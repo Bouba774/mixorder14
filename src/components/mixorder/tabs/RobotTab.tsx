@@ -851,23 +851,26 @@ function JournalSection() {
         </div>
       </header>
       <ul className="max-h-72 space-y-1 overflow-auto pr-1">
-        {entries.map((e) => (
+        {entries.map((e) => {
+          const isAction = e.kind === "action";
+          const tone = e.level ?? (e.outcome === "success" ? "success" : e.outcome === "error" ? "error" : e.outcome === "retry" ? "warning" : "info");
+          return (
           <li
-            key={`${e.ts}-${e.trackId}`}
+            key={`${e.ts}-${e.trackId ?? e.message ?? "entry"}`}
             className="flex items-start gap-2 rounded-lg border border-border/50 bg-background/60 px-2.5 py-1.5 text-[11px]"
           >
             <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-              e.outcome === "success" ? "bg-emerald-500"
-              : e.outcome === "retry" ? "bg-amber-400"
-              : e.outcome === "error" ? "bg-destructive"
+              tone === "success" ? "bg-emerald-500"
+              : tone === "warning" ? "bg-amber-400"
+              : tone === "error" ? "bg-destructive"
               : "bg-muted-foreground/40"
             }`} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-foreground">{e.name}</p>
+              <p className="truncate text-foreground">{isAction ? e.message : e.name ?? "Action Robot"}</p>
               <p className="truncate text-[10px] text-muted-foreground">
-                {friendlyMessage(e.outcome, e.bpm, e.message)}
+                {isAction ? actionLevelLabel(tone) : friendlyMessage(e.outcome ?? "skipped", e.bpm ?? null, e.message)}
               </p>
-              {showDetails && e.message && (
+              {showDetails && !isAction && e.message && (
                 <p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground/80">{e.message}</p>
               )}
             </div>
@@ -877,14 +880,22 @@ function JournalSection() {
               </p>
               <p className="text-[9px] text-muted-foreground">
                 {new Date(e.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-                {showDetails && e.attempts > 1 ? ` · ${e.attempts} essais` : ""}
+                {showDetails && (e.attempts ?? 0) > 1 ? ` · ${e.attempts} essais` : ""}
               </p>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );
+}
+
+function actionLevelLabel(level: string): string {
+  if (level === "success") return "Étape confirmée";
+  if (level === "warning") return "Avertissement / nouvelle tentative";
+  if (level === "error") return "Blocage détecté";
+  return "Action du robot";
 }
 
 function friendlyMessage(outcome: string, bpm: number | null, _message?: string): string {
