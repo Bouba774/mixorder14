@@ -199,6 +199,12 @@ export interface DiscDJBridge {
   openAccessibilitySettings?(): Promise<void>;
   /** Read BPM + title + duration from the requested deck. */
   readBpm(deck: DeckId, hint?: ReadHint): Promise<DiscDJReading>;
+  /**
+   * AutoSync-name: capture the full playlist zone, auto-detect the active
+   * blue row, and OCR only that row. Returns diagnostic images/rects for
+   * the test-mode preview.
+   */
+  readPlaylistActiveName?(deck: DeckId, playlistZone: CalibrationRect): Promise<PlaylistActiveNameReading>;
   /** Tap the "Next" button so DiscDJ loads the next track on the deck. */
   tapNext(deck: DeckId, options?: TapOptions): Promise<void>;
   /**
