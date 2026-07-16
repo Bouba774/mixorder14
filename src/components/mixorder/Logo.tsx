@@ -19,7 +19,7 @@ export function Logo({ size = 40, className = "", glow = false }: LogoProps) {
       {glow && (
         <div
           aria-hidden
-          className="absolute inset-0 -z-10 bg-gradient-gold blur-3xl opacity-50 animate-ambient"
+          className="absolute inset-0 -z-10 rounded-2xl border border-primary/25 bg-primary/[0.06]"
         />
       )}
       <img
@@ -37,7 +37,7 @@ export function Logo({ size = 40, className = "", glow = false }: LogoProps) {
             img.src = LOGO_FALLBACK_URL;
           }
         }}
-        className="object-contain drop-shadow-[0_8px_24px_rgba(93,214,44,0.35)]"
+        className="object-contain"
         style={{ width: size, height: size }}
       />
     </div>
