@@ -472,6 +472,7 @@ interface NativeDiscDJRobot {
     orientationOk?: boolean;
     sourcePackage?: string | null;
   }>;
+  tapNext(opts: {
     deck: DeckId;
     point?: CalibrationPoint | null;
     pressDurationMs?: number;
