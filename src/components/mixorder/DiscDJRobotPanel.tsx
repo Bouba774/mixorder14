@@ -483,6 +483,16 @@ function CalibrationPanel({
   const [testResult, setTestResult] = useState<Record<number, TestResult | null>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [autoSyncTestResult, setAutoSyncTestResult] = useState<string | null>(null);
+  const [playlistZoneDiag, setPlaylistZoneDiag] = useState<{
+    deck: DeckId;
+    ok: boolean;
+    message: string;
+    cleaned: string;
+    zoneImage?: string | null;
+    activeRowImage?: string | null;
+    activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+    reason?: string | null;
+  } | null>(null);
   const complete = isDiscDJCalibrationComplete(settings);
 
   const handleDirect = async (t: CalibrationTarget) => {
