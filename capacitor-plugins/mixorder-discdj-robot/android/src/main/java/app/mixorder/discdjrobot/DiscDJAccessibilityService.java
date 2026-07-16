@@ -136,6 +136,16 @@ public class DiscDJAccessibilityService extends AccessibilityService {
         void onResult(OcrResult result);
     }
 
+    /** Callback for `captureZoneBitmap`. `zone` is null when capture failed. */
+    public interface ZoneBitmapCallback {
+        void onResult(Bitmap zone, String zoneDataUrl, String errorReason);
+    }
+
+    /** Callback for `ocrBitmapLines`. */
+    public interface OcrLinesCallback {
+        void onResult(java.util.List<String> lines);
+    }
+
     /** Real display metrics in the current Android orientation. */
     public int[] getDisplaySize() {
         DisplayMetrics dm = new DisplayMetrics();
