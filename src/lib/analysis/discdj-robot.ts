@@ -886,22 +886,35 @@ export function useDiscDJRobot() {
 
 
 
-      // ---------- AUTO-SYNC MODE ----------
-      // Deterministic order: DiscDJ position `i` ALWAYS corresponds to
-      // library track `i`. We never re-order based on OCR success. If a
-      // BPM can't be read we mark the track "à réanalyser" and still
-      // advance to the next one so the sequence stays aligned.
+      // ---------- AUTO-SYNC MODE (Ordre aligné) ----------
+      // Fast, robust, name-free flow.
+      //  - Library order is the source of truth: DiscDJ track N → library N.
+      //  - Read BPM (robust multi-heuristic OCR), save immediately, tap Next,
+      //    smart-wait until BPM actually changes, then read the next one.
+      //  - No name OCR, no vote quorum, no matching.
+      //  - On unreadable BPM: mark the track "à réanalyser" and still tap
+      //    Next so the alignment is preserved. The user retries only those
+      //    tracks individually at the end.
+      //  - Progressive save after every track → resumable on any interruption.
       if (settings.analysisMode === "auto-sync") {
-        const stepStartedAt: number[] = [];
         const runStartedAt = Date.now();
         const foundBpms: RunRecap["foundBpms"] = [];
         const missing: RunRecap["missing"] = [];
+        const stepTimes: number[] = [];
+        const total = ordered.length - startIdx;
+        const perTrackAttempts = Math.max(2, Math.min(5, settings.bpmMaxAttempts));
+
+        setState((s) => ({ ...s, totalRun: total }));
+        log("info", `Ordre aligné : ${total} morceau(x) à traiter (départ n°${startIdx + 1}).`);
+
+        let previousBpm: number | null = null;
 
         for (let i = startIdx; i < ordered.length; i++) {
           if (runIdRef.current !== runId) return;
           const track = ordered[i];
-          const stepStart = Date.now();
           const positionLabel = `${i + 1}/${ordered.length}`;
+          const progress = `[${positionLabel}]`;
+          const stepStart = Date.now();
 
           setState((s) => ({
             ...s,
@@ -911,73 +924,63 @@ export function useDiscDJRobot() {
             currentReading: null,
           }));
 
-          let processedThisStep = false;
-
           if (skipAlreadyBpm && track.bpm != null) {
-            log("info", `Morceau ${positionLabel} « ${track.name} » : BPM déjà présent, ignoré.`);
+            log("info", `${progress} « ${track.name} » — BPM déjà présent, ignoré.`);
             setState((s) => ({ ...s, skipped: s.skipped + 1 }));
-            processedThisStep = true;
           } else {
-            // Wait for the track to actually be ready before OCR — minimum
-            // configured delay from the previous Next tap. (First iteration
-            // gets waitOnOpenMs which was already applied above.)
-            if (i > startIdx && settings.minReadyDelayMs > 0) {
-              await sleep(settings.minReadyDelayMs);
+            if (i === startIdx && settings.waitBeforeReadMs > 0) {
+              await bgSleep(bridge, settings.waitBeforeReadMs);
             }
             if (runIdRef.current !== runId) return;
 
-            // Vote-based BPM reading: up to bpmMaxAttempts OCR passes,
-            // early exit as soon as `bpmValidVoteCount` identical valid
-            // readings (40 ≤ BPM ≤ 240) have been collected.
-            const voted = await readBpmWithVote(bridge, deck, settings, log, positionLabel, () => runIdRef.current === runId);
+            log("info", `${progress} Morceau en cours : « ${track.name} ».`);
+            const robust = await readBpmRobust(
+              bridge,
+              deck,
+              cal.bpmZone!,
+              settings,
+              perTrackAttempts,
+              previousBpm,
+              () => runIdRef.current === runId,
+            );
             if (runIdRef.current !== runId) return;
-            const reading = voted.reading;
-            setState((s) => ({ ...s, currentReading: reading }));
 
-            if (reading.endOfPlaylist) {
+            if (robust.reading.endOfPlaylist) {
               log("success", "Fin de playlist DiscDJ détectée.");
               break;
             }
 
-            if (voted.bpm != null) {
-              // Persist BEFORE tapping Next — the invariant is: never
-              // advance until the current track's BPM has been saved.
-              setTrackAnalysis(track.id, { bpm: voted.bpm }, "discdj-auto");
+            setState((s) => ({ ...s, currentReading: robust.reading }));
+
+            if (robust.bpm != null) {
+              setTrackAnalysis(track.id, { bpm: robust.bpm }, "discdj-auto");
               processedRef.current.add(track.id);
-              foundBpms.push({ index: i + 1, name: track.name, bpm: voted.bpm });
+              foundBpms.push({ index: i + 1, name: track.name, bpm: robust.bpm });
               appendJournal(fingerprint, {
                 kind: "track",
                 ts: Date.now(),
                 trackId: track.id,
                 name: track.name,
-                bpm: voted.bpm,
+                bpm: robust.bpm,
                 outcome: "success",
-                durationMs: 0,
-                attempts: voted.attempts,
-                message: `Vote ×${voted.voteCount}/${voted.attempts}`,
+                durationMs: Date.now() - stepStart,
+                attempts: robust.attempts,
               });
+              log("success", `${progress} BPM détecté ${robust.bpm} → enregistré pour « ${track.name} ».`);
+              previousBpm = robust.bpm;
+              setState((s) => ({ ...s, doneInRun: processedRef.current.size }));
+
               if (settings.autosaveEachStep) {
                 snapshot = markRun(
                   snapshot ?? { v: 1, name: p.name, tracks: {} },
                   p.name,
                   { sourceId: "discdj-auto", startedAt: runStartedAt, lastPath: track.path },
                 );
-                if (reading.title) {
-                  snapshot = rememberAlias(snapshot, p.name, normalizeTitle(reading.title), track.path);
-                }
                 saveSnapshot(fingerprint, snapshot);
               }
-              log(
-                "success",
-                `Morceau ${positionLabel} « ${track.name} » : BPM ${voted.bpm} enregistré (vote ×${voted.voteCount} sur ${voted.attempts} tentatives).`,
-              );
-              setState((s) => ({ ...s, doneInRun: processedRef.current.size }));
-              processedThisStep = true;
             } else {
-              // OCR failed after every attempt — mark the track and keep
-              // the sequence aligned by still tapping Next.
               missing.push({ index: i + 1, name: track.name });
-              const reason = reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
+              const reason = robust.reason ?? robust.reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
               appendJournal(fingerprint, {
                 kind: "track",
                 ts: Date.now(),
@@ -985,16 +988,11 @@ export function useDiscDJRobot() {
                 name: track.name,
                 bpm: null,
                 outcome: "retry",
-                durationMs: 0,
-                attempts: settings.maxAttempts,
+                durationMs: Date.now() - stepStart,
+                attempts: robust.attempts,
                 message: reason,
               });
-              log(
-                "warning",
-                `Morceau ${positionLabel} « ${track.name} » : marqué « À réanalyser » (${reason}).`,
-              );
-              // Persist the "needs re-analysis" hint on the snapshot so the
-              // user can filter these tracks later.
+              log("warning", `${progress} BPM illisible pour « ${track.name} » — marqué à réanalyser.`);
               const snap = snapshot ?? { v: 1 as const, name: p.name, tracks: {} };
               snapshot = {
                 ...snap,
@@ -1008,42 +1006,45 @@ export function useDiscDJRobot() {
                   },
                 },
               };
+              // Also mark run resume position on failures so a restart moves
+              // past the failed track instead of replaying it.
+              snapshot = markRun(
+                snapshot,
+                p.name,
+                { sourceId: "discdj-auto", startedAt: runStartedAt, lastPath: track.path },
+              );
               if (settings.autosaveEachStep) saveSnapshot(fingerprint, snapshot);
               setState((s) => ({ ...s, needsRetryCount: s.needsRetryCount + 1 }));
-              processedThisStep = true;
             }
           }
 
-          // ETA — rolling average of the last 5 steps.
-          stepStartedAt.push(Date.now() - stepStart);
-          const recent = stepStartedAt.slice(-5);
-          const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+          // Rolling ETA over last 8 steps.
+          stepTimes.push(Date.now() - stepStart);
+          if (stepTimes.length > 8) stepTimes.shift();
+          const avg = stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
           const remaining = ordered.length - (i + 1);
           setState((s) => ({ ...s, etaMsRemaining: remaining > 0 ? Math.round(avg * remaining) : 0 }));
 
-          if (!processedThisStep) continue; // safety — should never trigger
           if (i + 1 >= ordered.length) break;
 
+          // Advance DiscDJ, then smart-wait until BPM actually changes.
           setState((s) => ({ ...s, phase: "advancing" }));
           try {
             await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs });
           } catch (e) {
-            const message = describe(e);
-            log("warning", `Clic Next échoué (${message}) — nouvelle tentative après une courte pause.`);
-            await sleep(600);
+            log("warning", `${progress} Clic Next échoué (${describe(e)}) — nouvelle tentative.`);
+            await bgSleep(bridge, 400);
             try {
               await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs });
             } catch (e2) {
-              log("error", `Second clic Next échoué (${describe(e2)}) — la boucle continue au morceau suivant.`);
+              log("error", `${progress} Second clic Next échoué : ${describe(e2)}.`);
               setState((s) => ({ ...s, lastError: describe(e2) }));
             }
           }
-          await sleep(settings.waitAfterClickMs);
           if (runIdRef.current !== runId) return;
+          await waitForNextTrack(bridge, deck, cal.bpmZone!, previousBpm, settings, () => runIdRef.current === runId);
         }
 
-
-        // Clear resume marker on clean completion.
         if (snapshot) {
           snapshot = markRun(snapshot, p.name, undefined);
           saveSnapshot(fingerprint, snapshot);
@@ -1057,8 +1058,9 @@ export function useDiscDJRobot() {
         };
         log(
           "success",
-          `Analyse terminée : ${recap.analyzedCount} morceau(x) analysé(s), ${recap.needsRetryCount} à réanalyser.`,
+          `Analyse terminée : ${recap.analyzedCount}/${total} BPM enregistrés · ${recap.needsRetryCount} à réanalyser.`,
         );
+        keyAnalysisEngine.setSlowMode(false);
         setState((s) => ({
           ...s,
           phase: "done",
