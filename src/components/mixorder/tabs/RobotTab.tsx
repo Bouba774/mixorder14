@@ -261,8 +261,8 @@ const CALIB_ELEMENTS: CalibElement[] = [
   { id: "bpmDeck2", label: "Zone BPM · platine 2", icon: "zone" },
   { id: "playlistButton", label: "Bouton Playlist", icon: "point", autosyncOnly: true },
   { id: "backButton", label: "Bouton Retour", icon: "point", autosyncOnly: true },
-  { id: "playlistZoneDeck1", label: "Zone Nom du morceau · platine 1", icon: "zone", autosyncOnly: true },
-  { id: "playlistZoneDeck2", label: "Zone Nom du morceau · platine 2", icon: "zone", autosyncOnly: true },
+  { id: "playlistZoneDeck1", label: "Zone complète playlist · platine 1", icon: "zone", autosyncOnly: true },
+  { id: "playlistZoneDeck2", label: "Zone complète playlist · platine 2", icon: "zone", autosyncOnly: true },
 ];
 
 function StepCalibration({ robot }: { robot: ReturnType<typeof useDiscDJRobot> }) {
