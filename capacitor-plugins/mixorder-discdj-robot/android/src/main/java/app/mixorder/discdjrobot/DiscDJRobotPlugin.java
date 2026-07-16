@@ -256,8 +256,92 @@ public class DiscDJRobotPlugin extends Plugin {
         });
     }
 
+    /**
+     * AutoSync-name: capture the full playlist zone, run the blue-row
+     * detector to find the currently loaded row, then OCR only that row.
+     */
     @PluginMethod
-    public void checkReady(PluginCall call) {
+    public void readPlaylistActiveName(PluginCall call) {
+        JSObject playlistZone = call.getObject("playlistZone");
+        DiscDJAccessibilityService svc = DiscDJAccessibilityService.getInstance();
+        String pkg = findInstalledDiscDJPackage(getContext());
+
+        JSObject out = new JSObject();
+        out.put("name", (String) null);
+        out.put("raw", (String) null);
+        out.put("zoneTexts", new JSArray());
+        out.put("reason", (String) null);
+        out.put("zoneImage", (String) null);
+        out.put("activeRowImage", (String) null);
+        out.put("activeRowFraction", (JSObject) null);
+
+        if (svc == null) { out.put("reason", "accessibility-disabled"); call.resolve(out); return; }
+        if (pkg == null) { out.put("reason", "discdj-not-installed"); call.resolve(out); return; }
+
+        int[] size = svc.getDisplaySize();
+        Rect zone = rectFromNormalized(playlistZone, size[0], size[1]);
+        if (zone == null) { out.put("reason", "playlist-zone-not-calibrated"); call.resolve(out); return; }
+
+        svc.captureZoneBitmap(zone, pkg, (bitmap, zoneDataUrl, err) -> {
+            if (bitmap == null) {
+                out.put("reason", err != null ? err : "capture-failed");
+                if (zoneDataUrl != null) out.put("zoneImage", zoneDataUrl);
+                call.resolve(out);
+                return;
+            }
+            out.put("zoneImage", zoneDataUrl);
+            PlaylistRowDetector.Result det = PlaylistRowDetector.findActiveRow(bitmap);
+            if (det.rowRect == null) {
+                out.put("reason", "no-active-row");
+                call.resolve(out);
+                return;
+            }
+            int bw = bitmap.getWidth();
+            int bh = bitmap.getHeight();
+            JSObject frac = new JSObject();
+            frac.put("x", det.rowRect.left / (double) bw);
+            frac.put("y", det.rowRect.top / (double) bh);
+            frac.put("width", det.rowRect.width() / (double) bw);
+            frac.put("height", det.rowRect.height() / (double) bh);
+            out.put("activeRowFraction", frac);
+
+            android.graphics.Bitmap row = android.graphics.Bitmap.createBitmap(
+                    bitmap,
+                    det.rowRect.left, det.rowRect.top,
+                    det.rowRect.width(), det.rowRect.height());
+            out.put("activeRowImage", DiscDJAccessibilityService.bitmapToDataUrl(row, true));
+
+            svc.ocrBitmapLines(row, lines -> {
+                JSArray arr = new JSArray();
+                StringBuilder joined = new StringBuilder();
+                for (String s : lines) {
+                    arr.put(s);
+                    if (joined.length() > 0) joined.append(' ');
+                    joined.append(s);
+                }
+                out.put("zoneTexts", arr);
+                String raw = joined.toString();
+                out.put("raw", raw);
+                String name = cleanPlaylistRowText(raw);
+                out.put("name", name.isEmpty() ? null : name);
+                if (name.isEmpty()) out.put("reason", "ocr-empty");
+                call.resolve(out);
+            });
+        });
+    }
+
+    /** Light cleanup mirroring the JS-side cleanOcrText — DiscDJ overlays a lot of parasitic labels. */
+    private static String cleanPlaylistRowText(String input) {
+        if (input == null) return "";
+        String s = input.replaceAll("[\\p{Cntrl}]+", " ")
+                .replaceAll("[·•●▪■□]", " ")
+                .replaceAll("(?i)\\.(mp3|wav|flac|m4a|aac|ogg|wma|aiff)\\b", "")
+                .replaceAll("(?i)\\bbpm\\s*[:=]?\\s*\\d{2,3}(?:[.,]\\d+)?\\b", " ")
+                .replaceAll("^\\s*\\d{1,4}\\s*[_\\-–—.:]+\\s*", "")
+                .replaceAll("[_\\-–—.·|/\\\\]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return s;
         DiscDJAccessibilityService svc = DiscDJAccessibilityService.getInstance();
         String pkg = findInstalledDiscDJPackage(getContext());
         JSObject out = new JSObject();
