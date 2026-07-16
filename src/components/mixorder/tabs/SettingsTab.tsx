@@ -546,9 +546,8 @@ function AboutCard() {
       <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-surface-elevated via-surface to-surface p-5">
         <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative flex items-center gap-4">
-          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-primary/15 shadow-glow">
-            <Logo className="h-9 w-9" />
-          </div>
+          <Logo size={72} glow className="shrink-0" />
+
           <div className="min-w-0">
             <div className="font-display text-xl font-bold text-foreground">MixOrder</div>
             <div className="text-xs text-muted-foreground">L'assistant DJ premium — analyse, tonalités, sets harmoniques.</div>
