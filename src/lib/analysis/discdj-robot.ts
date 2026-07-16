@@ -1201,16 +1201,18 @@ export function useDiscDJRobot() {
         await sleep(settings.waitOnOpenMs);
       }
       const cal = getDeckCalibration(settings, deck);
+      const pointText = cal.next ? `x=${cal.next.x.toFixed(3)} · y=${cal.next.y.toFixed(3)}` : "point non calibré";
+      log("info", `Test Next : clic envoyé en (${pointText}).`);
       await bridgeRef.current.tapNext(deck, {
         point: cal.next,
         pressDurationMs: settings.pressDurationMs,
       });
-      log("success", "Geste Next envoyé.");
+      log("success", `Test Next : clic envoyé en (${pointText}).`);
       await sleep(settings.waitAfterClickMs);
       setState((s) => ({ ...s, phase: "idle" }));
       return {
         changed: true,
-        message: "Geste Next envoyé — vérifie visuellement dans DiscDJ que le morceau a changé.",
+        message: `Clic envoyé en (${pointText}) — vérifie visuellement que le morceau a changé.`,
       };
     } catch (e) {
       const message = describe(e);
@@ -1237,10 +1239,11 @@ export function useDiscDJRobot() {
       log("info", "Test bouton Playlist : ouverture de DiscDJ…");
       await bridgeRef.current.openApp();
       await sleep(settings.waitOnOpenMs);
+      log("info", `Test Playlist : clic envoyé en (x=${point.x.toFixed(3)} · y=${point.y.toFixed(3)}).`);
       await bridgeRef.current.tapNext(1, { point, pressDurationMs: settings.pressDurationMs });
       await sleep(settings.waitAfterPlaylistOpenMs);
       setState((s) => ({ ...s, phase: "idle" }));
-      const msg = "Clic Playlist envoyé — vérifie que l'écran playlist est bien affiché dans DiscDJ.";
+      const msg = "Test Playlist : ouverture détectée si la zone playlist devient visible — lance Test playlist P1/P2 pour confirmer par capture.";
       log("success", msg);
       return { ok: true, message: msg };
     } catch (e) {
@@ -1262,13 +1265,15 @@ export function useDiscDJRobot() {
       await bridgeRef.current.openApp();
       await sleep(settings.waitOnOpenMs);
       if (playlist) {
+        log("info", `Test Retour : ouverture playlist via x=${playlist.x.toFixed(3)} · y=${playlist.y.toFixed(3)}.`);
         await bridgeRef.current.tapNext(1, { point: playlist, pressDurationMs: settings.pressDurationMs });
         await sleep(settings.waitAfterPlaylistOpenMs);
       }
+      log("info", `Test Retour : clic envoyé en (x=${back.x.toFixed(3)} · y=${back.y.toFixed(3)}).`);
       await bridgeRef.current.tapNext(1, { point: back, pressDurationMs: settings.pressDurationMs });
       await sleep(settings.waitAfterBackMs);
       setState((s) => ({ ...s, phase: "idle" }));
-      const msg = "Clic Retour envoyé — vérifie que l'écran principal est bien affiché.";
+      const msg = "Test Retour : écran principal détecté si la lecture BPM fonctionne ensuite.";
       log("success", msg);
       return { ok: true, message: msg };
     } catch (e) {
@@ -1303,6 +1308,7 @@ export function useDiscDJRobot() {
         log("info", `Test zone playlist platine ${deck} : ouverture playlist…`);
         await bridgeRef.current.openApp();
         await sleep(settings.waitOnOpenMs);
+        log("info", `Test playlist P${deck} : clic Playlist puis capture de la zone complète.`);
         await bridgeRef.current.tapNext(deck, { point: playlist, pressDurationMs: settings.pressDurationMs });
         await sleep(settings.waitAfterPlaylistOpenMs);
         const read = await readActivePlaylistRowOnce(bridgeRef.current, deck, zone);
@@ -1321,16 +1327,16 @@ export function useDiscDJRobot() {
           reason: read.reason ?? null,
         };
         if (read.reason === "no-active-row") {
-          const msg = "Aucune ligne active (fond bleu) détectée — recalibre la zone playlist en englobant toute la liste.";
+          const msg = "Impossible de détecter la ligne active — recalibre la zone playlist en englobant toute la liste.";
           log("warning", `Test zone playlist platine ${deck} : ${msg}`);
           return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
         }
         if (read.cleaned) {
-          const msg = `Ligne active détectée · OCR : « ${read.cleaned} »`;
+          const msg = `Ligne active trouvée · OCR = « ${read.cleaned} »`;
           log("success", `Test zone playlist platine ${deck} : ${msg}`);
           return { ok: true, raw: read.raw, cleaned: read.cleaned, message: msg, ...diag };
         }
-        const msg = "Ligne active détectée mais OCR vide — vérifie que la zone contient bien les titres lisibles.";
+        const msg = "Ligne active trouvée mais OCR vide — vérifie que la zone contient bien les titres lisibles.";
         log("warning", `Test zone playlist platine ${deck} : ${msg}`);
         return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
       } catch (e) {
