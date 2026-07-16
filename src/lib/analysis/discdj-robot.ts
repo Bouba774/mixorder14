@@ -1235,21 +1235,32 @@ export function useDiscDJRobot() {
   }, [log]);
 
   const testNameZone = useCallback(
-    async (deck: DeckId): Promise<{ ok: boolean; raw: string; cleaned: string; message: string }> => {
+    async (
+      deck: DeckId,
+    ): Promise<{
+      ok: boolean;
+      raw: string;
+      cleaned: string;
+      message: string;
+      zoneImage?: string | null;
+      activeRowImage?: string | null;
+      activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+      reason?: string | null;
+    }> => {
       const settings = settingsRef.current;
       const zone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
       const playlist = settings.calibration.playlistButton;
       const back = settings.calibration.backButton;
-      if (!zone) return { ok: false, raw: "", cleaned: "", message: `Zone nom du morceau platine ${deck} non calibrée.` };
+      if (!zone) return { ok: false, raw: "", cleaned: "", message: `Zone playlist platine ${deck} non calibrée.` };
       if (!playlist) return { ok: false, raw: "", cleaned: "", message: "Bouton Playlist non calibré." };
       setState((s) => ({ ...s, phase: "testing", deck }));
       try {
-        log("info", `Test zone Nom platine ${deck} : ouverture playlist…`);
+        log("info", `Test zone playlist platine ${deck} : ouverture playlist…`);
         await bridgeRef.current.openApp();
         await sleep(settings.waitOnOpenMs);
         await bridgeRef.current.tapNext(deck, { point: playlist, pressDurationMs: settings.pressDurationMs });
         await sleep(settings.waitAfterPlaylistOpenMs);
-        const { raw, cleaned } = await readAndCleanNameOnce(bridgeRef.current, deck, zone);
+        const read = await readActivePlaylistRowOnce(bridgeRef.current, deck, zone);
         // Best-effort return to main so the user isn't stuck.
         if (back) {
           try {
@@ -1258,17 +1269,28 @@ export function useDiscDJRobot() {
           } catch { /* ignore */ }
         }
         setState((s) => ({ ...s, phase: "idle" }));
-        if (cleaned) {
-          const msg = `OCR brut : « ${raw} » · nettoyé : « ${cleaned} »`;
-          log("success", `Test zone Nom platine ${deck} : ${msg}`);
-          return { ok: true, raw, cleaned, message: msg };
+        const diag = {
+          zoneImage: read.zoneImage ?? null,
+          activeRowImage: read.activeRowImage ?? null,
+          activeRowFraction: read.activeRowFraction ?? null,
+          reason: read.reason ?? null,
+        };
+        if (read.reason === "no-active-row") {
+          const msg = "Aucune ligne active (fond bleu) détectée — recalibre la zone playlist en englobant toute la liste.";
+          log("warning", `Test zone playlist platine ${deck} : ${msg}`);
+          return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
         }
-        const msg = "Zone lue mais aucun texte détecté — élargis le rectangle ou recalibre.";
-        log("warning", `Test zone Nom platine ${deck} : ${msg}`);
-        return { ok: false, raw, cleaned, message: msg };
+        if (read.cleaned) {
+          const msg = `Ligne active détectée · OCR : « ${read.cleaned} »`;
+          log("success", `Test zone playlist platine ${deck} : ${msg}`);
+          return { ok: true, raw: read.raw, cleaned: read.cleaned, message: msg, ...diag };
+        }
+        const msg = "Ligne active détectée mais OCR vide — vérifie que la zone contient bien les titres lisibles.";
+        log("warning", `Test zone playlist platine ${deck} : ${msg}`);
+        return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
       } catch (e) {
         const message = describe(e);
-        log("error", `Test zone Nom platine ${deck} échoué : ${message}`);
+        log("error", `Test zone playlist platine ${deck} échoué : ${message}`);
         setState((s) => ({ ...s, phase: "error", errorMessage: message }));
         return { ok: false, raw: "", cleaned: "", message };
       }
