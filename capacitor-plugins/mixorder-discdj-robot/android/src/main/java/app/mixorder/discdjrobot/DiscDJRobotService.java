@@ -694,13 +694,29 @@ public class DiscDJRobotService extends Service {
 
     private void stopWithError(String message) {
         running = false;
-        phase = "paused";
+        phase = "error";
         emitLog("error", message);
         saveState(true, null);
-        emit("discdjPhase", jo("phase", phase));
+        emit("discdjPhase", jo("phase", phase, "message", message));
         updateNotif();
         stopForeground(true);
         stopSelf();
+    }
+
+    private int armTimeout(String label, long timeoutMs) {
+        if (main == null) return -1;
+        final int seq = ++watchdogSeq;
+        final long safeMs = Math.max(1500, timeoutMs);
+        main.postDelayed(() -> {
+            if (running && watchdogSeq == seq) {
+                stopWithError("Timeout après " + Math.round(safeMs / 1000.0) + " secondes — " + label + ".");
+            }
+        }, safeMs);
+        return seq;
+    }
+
+    private void disarmTimeout(int seq) {
+        if (seq >= 0 && watchdogSeq == seq) watchdogSeq++;
     }
 
     // --- Persistence ---
