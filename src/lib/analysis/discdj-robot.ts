@@ -1186,9 +1186,9 @@ export function useDiscDJRobot() {
       const reading = await readSmartDeck(bridgeRef.current, deck, settings, {}, log);
       setState((s) => ({ ...s, currentReading: reading, phase: "idle" }));
       if (isPlausibleBpm(reading.bpm)) {
-        log("success", `Test lecture réussi : BPM ${reading.bpm}${reading.title ? ` · ${reading.title}` : ""}`);
+        log("success", `Test BPM : OCR = "${reading.raw ?? reading.zoneTexts?.join(" ") ?? ""}" → valeur ${Math.round(reading.bpm)}.`);
       } else {
-        log("warning", "Test lecture terminé sans BPM détecté.");
+        log("warning", `Test BPM : ${reading.parseReason ?? "OCR illisible ou aucun texte détecté."}`);
       }
       return reading;
     } catch (e) {
