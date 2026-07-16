@@ -1,11 +1,11 @@
 {
-  "version": 1,
   "asset_id": "23269b12-fbf4-40e8-bb1f-106be9ef07e5",
-  "project_id": "38ccd7da-cc4e-4fa5-b1be-fcc291f7ff15",
-  "url": "/__l5e/assets-v1/23269b12-fbf4-40e8-bb1f-106be9ef07e5/mixorder-logo.png",
-  "r2_key": "a/v1/38ccd7da-cc4e-4fa5-b1be-fcc291f7ff15/23269b12-fbf4-40e8-bb1f-106be9ef07e5/mixorder-logo.png",
-  "original_filename": "mixorder-logo.png",
-  "size": 1040868,
   "content_type": "image/png",
-  "created_at": "2026-07-16T16:25:43Z"
+  "created_at": "2026-07-16T16:25:43Z",
+  "original_filename": "mixorder-logo.png",
+  "project_id": "d52f9e88-7b52-4aa2-9d50-fabf00dcfd58",
+  "r2_key": "a/v1/d52f9e88-7b52-4aa2-9d50-fabf00dcfd58/23269b12-fbf4-40e8-bb1f-106be9ef07e5/mixorder-logo.png",
+  "size": 1040868,
+  "url": "/__l5e/assets-v1/23269b12-fbf4-40e8-bb1f-106be9ef07e5/mixorder-logo.png",
+  "version": 1
 }
