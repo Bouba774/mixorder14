@@ -363,6 +363,24 @@ function createNativeBridge(): DiscDJBridge {
         endOfPlaylist: r.endOfPlaylist,
       };
     },
+    async readPlaylistActiveName(deck, playlistZone) {
+      if (typeof plugin.readPlaylistActiveName !== "function") {
+        return { name: null, reason: "Le plugin natif n'expose pas readPlaylistActiveName." };
+      }
+      const r = await plugin.readPlaylistActiveName({ deck, playlistZone });
+      return {
+        name: r.name ?? null,
+        raw: r.raw ?? null,
+        zoneTexts: Array.isArray(r.zoneTexts) ? r.zoneTexts : [],
+        reason: r.reason ?? null,
+        zoneImage: r.zoneImage ?? null,
+        activeRowImage: r.activeRowImage ?? null,
+        activeRowFraction: r.activeRowFraction ?? null,
+        sourceOk: r.sourceOk,
+        orientationOk: r.orientationOk,
+        sourcePackage: r.sourcePackage ?? null,
+      };
+    },
     async checkReady() {
       return plugin.checkReady();
     },
