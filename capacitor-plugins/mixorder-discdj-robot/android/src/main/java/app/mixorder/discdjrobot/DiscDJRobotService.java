@@ -198,7 +198,7 @@ public class DiscDJRobotService extends Service {
             bpmZone = p.optJSONObject("bpmZone");
             playlistButton = p.optJSONObject("playlistButton");
             backButton = p.optJSONObject("backButton");
-            nameZone = p.optJSONObject("nameZone");
+            playlistZone = p.optJSONObject("playlistZone");
             JSONArray arr = p.optJSONArray("tracks");
             if (arr != null) {
                 for (int i = 0; i < arr.length(); i++) {
