@@ -97,7 +97,11 @@ export interface BackgroundRunOptions {
   bpmZone: CalibrationRect | null;
   playlistButton?: CalibrationPoint | null;
   backButton?: CalibrationPoint | null;
-  nameZone?: CalibrationRect | null;
+  /**
+   * AutoSync-name: full playlist list rectangle. The native side scans it
+   * for the currently-loaded blue row, isolates that row, and OCRs it.
+   */
+  playlistZone?: CalibrationRect | null;
   skipAlreadyBpm: boolean;
   replaceExisting: boolean;
   waitOnOpenMs: number;
@@ -108,6 +112,39 @@ export interface BackgroundRunOptions {
   pressDurationMs: number;
   maxAttempts: number;
   nameMaxOcrRetries?: number;
+}
+
+/**
+ * AutoSync-name: read of the currently-loaded row inside a calibrated
+ * playlist zone. The native side detects the blue "selected row" by pixel
+ * analysis, crops it, then runs OCR on that row only.
+ */
+export interface PlaylistActiveNameReading {
+  /** Cleaned/best OCR text for the active row; null when no row detected. */
+  name: string | null;
+  /** Raw joined OCR text (may include row noise). */
+  raw?: string | null;
+  /** Every OCR line captured on the isolated active row. */
+  zoneTexts?: string[];
+  /**
+   * Diagnostic reason when `name` is null:
+   *  - "no-active-row" : no blue selected row was detected inside the zone.
+   *  - "ocr-empty"     : row detected but OCR returned no readable text.
+   *  - "capture-failed" or freeform message from the native layer.
+   */
+  reason?: string | null;
+  /** Full playlist zone image (data URL) — for the test-mode preview. */
+  zoneImage?: string | null;
+  /** Isolated active-row image (data URL) — for the test-mode preview. */
+  activeRowImage?: string | null;
+  /**
+   * Active-row rectangle expressed as fractions of the CAPTURED ZONE
+   * (0..1). Lets the UI paint an overlay on top of `zoneImage`.
+   */
+  activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+  sourceOk?: boolean;
+  orientationOk?: boolean;
+  sourcePackage?: string | null;
 }
 
 export interface BackgroundStatus {
@@ -162,6 +199,12 @@ export interface DiscDJBridge {
   openAccessibilitySettings?(): Promise<void>;
   /** Read BPM + title + duration from the requested deck. */
   readBpm(deck: DeckId, hint?: ReadHint): Promise<DiscDJReading>;
+  /**
+   * AutoSync-name: capture the full playlist zone, auto-detect the active
+   * blue row, and OCR only that row. Returns diagnostic images/rects for
+   * the test-mode preview.
+   */
+  readPlaylistActiveName?(deck: DeckId, playlistZone: CalibrationRect): Promise<PlaylistActiveNameReading>;
   /** Tap the "Next" button so DiscDJ loads the next track on the deck. */
   tapNext(deck: DeckId, options?: TapOptions): Promise<void>;
   /**
@@ -320,6 +363,24 @@ function createNativeBridge(): DiscDJBridge {
         endOfPlaylist: r.endOfPlaylist,
       };
     },
+    async readPlaylistActiveName(deck, playlistZone) {
+      if (typeof plugin.readPlaylistActiveName !== "function") {
+        return { name: null, reason: "Le plugin natif n'expose pas readPlaylistActiveName." };
+      }
+      const r = await plugin.readPlaylistActiveName({ deck, playlistZone });
+      return {
+        name: r.name ?? null,
+        raw: r.raw ?? null,
+        zoneTexts: Array.isArray(r.zoneTexts) ? r.zoneTexts : [],
+        reason: r.reason ?? null,
+        zoneImage: r.zoneImage ?? null,
+        activeRowImage: r.activeRowImage ?? null,
+        activeRowFraction: r.activeRowFraction ?? null,
+        sourceOk: r.sourceOk,
+        orientationOk: r.orientationOk,
+        sourcePackage: r.sourcePackage ?? null,
+      };
+    },
     async checkReady() {
       return plugin.checkReady();
     },
@@ -399,6 +460,18 @@ interface NativeDiscDJRobot {
     height?: number;
   }>;
   readBpm(opts: { deck: DeckId; bpmZone?: CalibrationRect | null }): Promise<NativeReading>;
+  readPlaylistActiveName?(opts: { deck: DeckId; playlistZone: CalibrationRect }): Promise<{
+    name: string | null;
+    raw?: string | null;
+    zoneTexts?: string[];
+    reason?: string | null;
+    zoneImage?: string | null;
+    activeRowImage?: string | null;
+    activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+    sourceOk?: boolean;
+    orientationOk?: boolean;
+    sourcePackage?: string | null;
+  }>;
   tapNext(opts: {
     deck: DeckId;
     point?: CalibrationPoint | null;
@@ -428,10 +501,12 @@ function calibrationInstruction(target: CalibrationTarget): string {
       return "Touche le bouton PLAYLIST dans DiscDJ";
     case "backButton":
       return "Touche le bouton RETOUR (flèche haut) depuis la playlist";
-    case "nameZoneDeck1":
-      return "Encadre la zone du nom du morceau chargé (haut de la playlist, platine 1)";
-    case "nameZoneDeck2":
-      return "Encadre la zone du nom du morceau chargé (haut de la playlist, platine 2)";
+    case "playlistZoneDeck1":
+      return "Encadre la zone complète de la liste des morceaux (platine 1) — englobe toutes les lignes visibles";
+    case "playlistZoneDeck2":
+      return "Encadre la zone complète de la liste des morceaux (platine 2) — englobe toutes les lignes visibles";
+    default:
+      return "Touche l'emplacement à calibrer";
   }
 }
 

@@ -73,7 +73,7 @@ public class DiscDJRobotService extends Service {
     private String analysisMode = "auto-sync";
     private JSONObject playlistButton;
     private JSONObject backButton;
-    private JSONObject nameZone;
+    private JSONObject playlistZone;
     private int waitAfterPlaylistOpenMs = 900;
     private int waitAfterBackMs = 700;
     private int nameMaxOcrRetries = 3;
@@ -198,7 +198,7 @@ public class DiscDJRobotService extends Service {
             bpmZone = p.optJSONObject("bpmZone");
             playlistButton = p.optJSONObject("playlistButton");
             backButton = p.optJSONObject("backButton");
-            nameZone = p.optJSONObject("nameZone");
+            playlistZone = p.optJSONObject("playlistZone");
             JSONArray arr = p.optJSONArray("tracks");
             if (arr != null) {
                 for (int i = 0; i < arr.length(); i++) {
@@ -314,38 +314,61 @@ public class DiscDJRobotService extends Service {
         if (!running || userPaused) return;
         DiscDJAccessibilityService svc = DiscDJAccessibilityService.getInstance();
         if (svc == null) { scheduleTick(500); return; }
-        Rect crop = rectFromJson(svc, nameZone);
-        if (crop == null) { backThenRetryOrSkip(attempt, "Zone Nom invalide."); return; }
-        svc.readBpmFromScreenshot(crop, discdjPackage, result -> {
-            List<String> candidates = buildNameCandidates(result.raw, result.zoneTexts);
-            Match match = resolveMatch(candidates, tracks.get(index));
-            if (match.track != null) {
-                TrackItem t = match.track;
-                lastBpm = bpm;
-                currentName = t.name;
-                emitLog("success", "Morceau " + (index + 1) + "/" + total + " · BPM " + ((int) bpm) + " · « " + (candidates.isEmpty() ? "" : candidates.get(0)) + " » → « " + t.name + " »");
-                try {
-                    JSONObject payload = new JSONObject();
-                    payload.put("trackId", t.id);
-                    payload.put("path", t.path);
-                    payload.put("bpm", bpm);
-                    payload.put("index", index + 1);
-                    payload.put("total", total);
-                    emit("discdjBpm", payload);
-                } catch (JSONException ignored) {}
-                saveState(false, t.path);
-                returnToMainThen(ok -> {
-                    if (ok) main.postDelayed(this::advance, Math.max(250, waitAfterBackMs));
-                    else stopWithError("Retour écran principal non confirmé — analyse arrêtée pour éviter un décalage.");
-                });
-            } else if (nameAttempt + 1 < nameMaxOcrRetries) {
-                main.postDelayed(() -> readNameAndMatch(attempt, bpm, nameAttempt + 1), 350);
-            } else {
-                String ocr = candidates.isEmpty() ? "" : candidates.get(0);
-                String guess = match.bestTrack != null ? " (meilleur candidat: « " + match.bestTrack.name + " » " + Math.round(match.bestScore * 100) + "%)" : "";
-                backThenRetryOrSkip(attempt, "Aucun morceau MixOrder ne correspond à « " + ocr + " »" + guess + ".");
+        Rect crop = rectFromJson(svc, playlistZone);
+        if (crop == null) { backThenRetryOrSkip(attempt, "Zone playlist invalide ou non calibrée."); return; }
+        // Capture the full playlist zone, detect the active blue row, OCR that row only.
+        svc.captureZoneBitmap(crop, discdjPackage, (bitmap, zoneUrl, err) -> {
+            if (bitmap == null) {
+                backThenRetryOrSkip(attempt, "Capture playlist échouée : " + (err != null ? err : "erreur inconnue"));
+                return;
             }
+            PlaylistRowDetector.Result det = PlaylistRowDetector.findActiveRow(bitmap);
+            if (det.rowRect == null) {
+                stopWithError("Aucune ligne active (fond bleu) trouvée dans la zone playlist — recalibre la zone playlist.");
+                return;
+            }
+            android.graphics.Bitmap rowBmp = android.graphics.Bitmap.createBitmap(
+                    bitmap, det.rowRect.left, det.rowRect.top, det.rowRect.width(), det.rowRect.height());
+            svc.ocrBitmapLines(rowBmp, lines -> {
+                List<String> candidates = buildNameCandidates(join(lines), lines);
+                Match match = resolveMatch(candidates, tracks.get(index));
+                if (match.track != null) {
+                    TrackItem t = match.track;
+                    lastBpm = bpm;
+                    currentName = t.name;
+                    String ocrPreview = candidates.isEmpty() ? "" : candidates.get(0);
+                    emitLog("success", "Morceau " + (index + 1) + "/" + total + " · BPM " + ((int) bpm) + " · « " + ocrPreview + " » → « " + t.name + " »");
+                    try {
+                        JSONObject payload = new JSONObject();
+                        payload.put("trackId", t.id);
+                        payload.put("path", t.path);
+                        payload.put("bpm", bpm);
+                        payload.put("index", index + 1);
+                        payload.put("total", total);
+                        emit("discdjBpm", payload);
+                    } catch (JSONException ignored) {}
+                    saveState(false, t.path);
+                    returnToMainThen(ok -> {
+                        if (ok) main.postDelayed(this::advance, Math.max(250, waitAfterBackMs));
+                        else stopWithError("Retour écran principal non confirmé — analyse arrêtée pour éviter un décalage.");
+                    });
+                } else if (nameAttempt + 1 < nameMaxOcrRetries) {
+                    main.postDelayed(() -> readNameAndMatch(attempt, bpm, nameAttempt + 1), 350);
+                } else {
+                    String ocr = candidates.isEmpty() ? "" : candidates.get(0);
+                    String guess = match.bestTrack != null
+                            ? " (meilleur candidat: « " + match.bestTrack.name + " » " + Math.round(match.bestScore * 100) + "%)"
+                            : "";
+                    backThenRetryOrSkip(attempt, "Aucun morceau MixOrder ne correspond à « " + ocr + " »" + guess + ".");
+                }
+            });
         });
+    }
+
+    private static String join(List<String> texts) {
+        StringBuilder b = new StringBuilder();
+        if (texts != null) for (String s : texts) { if (s == null) continue; if (b.length() > 0) b.append(' '); b.append(s); }
+        return b.toString();
     }
 
     private void retryNameCheckedStep(int attempt, String reason) {

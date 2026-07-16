@@ -53,8 +53,8 @@ const TARGETS: Array<{ id: CalibrationTarget; label: string; icon: "point" | "zo
 const AUTOSYNC_TARGETS: Array<{ id: CalibrationTarget; label: string; icon: "point" | "zone"; screen: "main" | "playlist" }> = [
   { id: "playlistButton", label: "Bouton Playlist (écran principal)", icon: "point", screen: "main" },
   { id: "backButton", label: "Bouton Retour (dans la playlist)", icon: "point", screen: "playlist" },
-  { id: "nameZoneDeck1", label: "Zone Nom du morceau · platine 1 (playlist)", icon: "zone", screen: "playlist" },
-  { id: "nameZoneDeck2", label: "Zone Nom du morceau · platine 2 (playlist)", icon: "zone", screen: "playlist" },
+  { id: "playlistZoneDeck1", label: "Zone complète playlist · platine 1 (englobe toute la liste)", icon: "zone", screen: "playlist" },
+  { id: "playlistZoneDeck2", label: "Zone complète playlist · platine 2 (englobe toute la liste)", icon: "zone", screen: "playlist" },
 ];
 
 
@@ -475,7 +475,7 @@ function CalibrationPanel({
   onTestClick: (deck: DeckId) => Promise<{ changed: boolean; message: string }>;
   onTestPlaylist: () => Promise<{ ok: boolean; message: string }>;
   onTestBack: () => Promise<{ ok: boolean; message: string }>;
-  onTestNameZone: (deck: DeckId) => Promise<{ ok: boolean; raw: string; cleaned: string; message: string }>;
+  onTestNameZone: (deck: DeckId) => Promise<{ ok: boolean; raw: string; cleaned: string; message: string; zoneImage?: string | null; activeRowImage?: string | null; activeRowFraction?: { x: number; y: number; width: number; height: number } | null; reason?: string | null }>;
 }) {
   const [method, setMethod] = useState<"direct" | "screenshot">("direct");
   const [busy, setBusy] = useState<CalibrationTarget | null>(null);
@@ -483,6 +483,16 @@ function CalibrationPanel({
   const [testResult, setTestResult] = useState<Record<number, TestResult | null>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [autoSyncTestResult, setAutoSyncTestResult] = useState<string | null>(null);
+  const [playlistZoneDiag, setPlaylistZoneDiag] = useState<{
+    deck: DeckId;
+    ok: boolean;
+    message: string;
+    cleaned: string;
+    zoneImage?: string | null;
+    activeRowImage?: string | null;
+    activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+    reason?: string | null;
+  } | null>(null);
   const complete = isDiscDJCalibrationComplete(settings);
 
   const handleDirect = async (t: CalibrationTarget) => {
@@ -594,7 +604,7 @@ function CalibrationPanel({
             </button>
             {[1, 2].map((d) => {
               const deck = d as DeckId;
-              const key = `nameZone${deck}`;
+              const key = `playlistZone${deck}`;
               return (
                 <button
                   key={key}
@@ -603,14 +613,22 @@ function CalibrationPanel({
                     setTesting(key);
                     const r = await onTestNameZone(deck);
                     setTesting(null);
-                    setAutoSyncTestResult(
-                      `${r.ok ? "✓" : "✗"} Zone Nom P${deck} — ${r.message}`,
-                    );
+                    setAutoSyncTestResult(`${r.ok ? "✓" : "✗"} Zone playlist P${deck} — ${r.message}`);
+                    setPlaylistZoneDiag({
+                      deck,
+                      ok: r.ok,
+                      message: r.message,
+                      cleaned: r.cleaned,
+                      zoneImage: r.zoneImage,
+                      activeRowImage: r.activeRowImage,
+                      activeRowFraction: r.activeRowFraction,
+                      reason: r.reason,
+                    });
                   }}
                   className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-2 text-[10px] font-semibold text-primary-foreground disabled:opacity-50"
                 >
                   {testing === key ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanLine className="h-3 w-3" />}
-                  Test Nom P{deck}
+                  Test playlist P{deck}
                 </button>
               );
             })}
@@ -619,6 +637,9 @@ function CalibrationPanel({
             <div className={`rounded-md px-2 py-1.5 text-[10px] ${autoSyncTestResult.startsWith("✓") ? "bg-primary/10 text-foreground" : "bg-destructive/10 text-destructive"}`}>
               {autoSyncTestResult}
             </div>
+          )}
+          {playlistZoneDiag && (
+            <PlaylistZonePreview diag={playlistZoneDiag} onClose={() => setPlaylistZoneDiag(null)} />
           )}
         </div>
       )}
@@ -683,6 +704,82 @@ function CalibrationPanel({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+interface PlaylistZoneDiag {
+  deck: DeckId;
+  ok: boolean;
+  message: string;
+  cleaned: string;
+  zoneImage?: string | null;
+  activeRowImage?: string | null;
+  activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+  reason?: string | null;
+}
+
+/**
+ * Test-mode preview for the playlist zone: shows the captured zone with the
+ * detected active (blue) row highlighted, plus the isolated row and OCR text.
+ * Lets the user visually verify that the row detector picked the right line.
+ */
+function PlaylistZonePreview({ diag, onClose }: { diag: PlaylistZoneDiag; onClose: () => void }) {
+  const frac = diag.activeRowFraction;
+  const rowDetected = !!frac;
+  const badge = diag.reason === "no-active-row"
+    ? { label: "Aucune ligne bleue", tone: "bg-destructive/15 text-destructive" }
+    : rowDetected && diag.cleaned
+      ? { label: "Ligne active détectée · OCR ✓", tone: "bg-primary/15 text-primary" }
+      : rowDetected
+        ? { label: "Ligne détectée · OCR vide", tone: "bg-accent/40 text-foreground" }
+        : { label: "Diagnostic", tone: "bg-accent/40 text-foreground" };
+  return (
+    <div className="animate-fade-in space-y-2 rounded-lg border border-primary/30 bg-background/70 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.tone}`}>
+          {badge.label} · P{diag.deck}
+        </span>
+        <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:text-foreground" aria-label="Fermer">
+          <CircleX className="h-3 w-3" />
+        </button>
+      </div>
+      {diag.zoneImage ? (
+        <div className="relative overflow-hidden rounded-md border border-border/60 bg-background">
+          <img src={diag.zoneImage} alt={`Zone playlist P${diag.deck}`} className="block max-h-64 w-full object-contain" />
+          {frac && (
+            <div
+              className="pointer-events-none absolute rounded-sm border-2 border-primary shadow-[0_0_0_2px_rgba(93,214,44,0.35)]"
+              style={{
+                left: `${frac.x * 100}%`,
+                top: `${frac.y * 100}%`,
+                width: `${frac.width * 100}%`,
+                height: `${frac.height * 100}%`,
+                background: "rgba(93,214,44,0.15)",
+              }}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-border/60 bg-background/40 px-2 py-3 text-[10px] text-muted-foreground">
+          Aucune image de zone reçue.
+        </div>
+      )}
+      {diag.activeRowImage && (
+        <div>
+          <p className="mb-1 text-[10px] text-muted-foreground">Ligne active isolée (utilisée pour l'OCR) :</p>
+          <img src={diag.activeRowImage} alt="Ligne active" className="block max-h-16 w-full rounded border border-border/60 object-contain bg-background" />
+        </div>
+      )}
+      <div className="rounded-md bg-background/60 px-2 py-1.5 text-[10px]">
+        <p className="text-muted-foreground">Texte OCR :</p>
+        <p className="font-mono text-foreground">{diag.cleaned || <span className="italic text-muted-foreground">(vide)</span>}</p>
+      </div>
+      {diag.reason === "no-active-row" && (
+        <p className="rounded bg-destructive/10 px-2 py-1 text-[10px] text-destructive">
+          Aucune ligne au fond bleu n'a été trouvée. Recalibre la zone playlist en englobant toute la liste des morceaux visibles.
+        </p>
+      )}
     </div>
   );
 }
@@ -904,7 +1001,7 @@ function missingCalibrationForStart(settings: DiscDJRobotSettings, deck: DeckId)
   if (settings.analysisMode === "autosync-name") {
     if (!cal.playlistButton) missing.push("bouton Playlist");
     if (!cal.backButton) missing.push("bouton Retour");
-    if (!(deck === 1 ? cal.nameZoneDeck1 : cal.nameZoneDeck2)) missing.push(`zone Nom du morceau platine ${deck}`);
+    if (!(deck === 1 ? cal.playlistZoneDeck1 : cal.playlistZoneDeck2)) missing.push(`zone Nom du morceau platine ${deck}`);
   }
   return missing;
 }

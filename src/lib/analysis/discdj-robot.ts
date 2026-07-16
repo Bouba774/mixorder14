@@ -517,7 +517,7 @@ export function useDiscDJRobot() {
         bridge.startBackgroundRun
       ) {
         const cal = getDeckCalibration(settings, deck);
-        const nameZone = deck === 1 ? settings.calibration.nameZoneDeck1 : settings.calibration.nameZoneDeck2;
+        const nameZone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
         if (settings.analysisMode === "autosync-name") {
           const missingCal: string[] = [];
           if (!settings.calibration.playlistButton) missingCal.push("bouton Playlist");
@@ -550,7 +550,7 @@ export function useDiscDJRobot() {
             bpmZone: cal.bpmZone,
             playlistButton: settings.analysisMode === "autosync-name" ? settings.calibration.playlistButton : null,
             backButton: settings.analysisMode === "autosync-name" ? settings.calibration.backButton : null,
-            nameZone: settings.analysisMode === "autosync-name" ? nameZone : null,
+            playlistZone: settings.analysisMode === "autosync-name" ? nameZone : null,
             skipAlreadyBpm,
             replaceExisting,
             waitOnOpenMs: settings.waitOnOpenMs,
@@ -610,7 +610,7 @@ export function useDiscDJRobot() {
       if (settings.analysisMode === "autosync-name") {
         const playlistBtn = settings.calibration.playlistButton;
         const backBtn = settings.calibration.backButton;
-        const nameZone = deck === 1 ? settings.calibration.nameZoneDeck1 : settings.calibration.nameZoneDeck2;
+        const nameZone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
         const missingCal: string[] = [];
         if (!cal.next) missingCal.push(`bouton Next platine ${deck}`);
         if (!cal.bpmZone) missingCal.push(`zone BPM platine ${deck}`);
@@ -676,12 +676,23 @@ export function useDiscDJRobot() {
             if (runIdRef.current !== runId) return;
             await ensureDiscDJForeground(bridge, log);
 
-            // 4. OCR the calibrated name zone.
-            const nameRead = await readAndCleanNameOnce(bridge, deck, nameZone!);
-            const { cleaned } = nameRead;
+            // 4. Capture the FULL playlist zone, auto-detect the active
+            //    blue row, and OCR only that row.
+            const nameRead = await readActivePlaylistRowOnce(bridge, deck, nameZone!);
+            const { cleaned, reason } = nameRead;
             lastOcr = cleaned;
+            if (reason === "no-active-row") {
+              const msg = `${progress} Ligne active DiscDJ introuvable dans la zone playlist — recalibre la zone playlist platine ${deck}.`;
+              log("error", msg);
+              if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
+                setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+                return;
+              }
+              setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+              return;
+            }
             if (!cleaned) {
-              log("warning", `${progress} Nom illisible — retour et nouvelle tentative.`);
+              log("warning", `${progress} Nom illisible sur la ligne active — retour et nouvelle tentative.`);
               if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
                 const msg = `${progress} Retour écran principal refusé — analyse arrêtée pour éviter un décalage.`;
                 log("error", msg);
@@ -1224,21 +1235,32 @@ export function useDiscDJRobot() {
   }, [log]);
 
   const testNameZone = useCallback(
-    async (deck: DeckId): Promise<{ ok: boolean; raw: string; cleaned: string; message: string }> => {
+    async (
+      deck: DeckId,
+    ): Promise<{
+      ok: boolean;
+      raw: string;
+      cleaned: string;
+      message: string;
+      zoneImage?: string | null;
+      activeRowImage?: string | null;
+      activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+      reason?: string | null;
+    }> => {
       const settings = settingsRef.current;
-      const zone = deck === 1 ? settings.calibration.nameZoneDeck1 : settings.calibration.nameZoneDeck2;
+      const zone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
       const playlist = settings.calibration.playlistButton;
       const back = settings.calibration.backButton;
-      if (!zone) return { ok: false, raw: "", cleaned: "", message: `Zone nom du morceau platine ${deck} non calibrée.` };
+      if (!zone) return { ok: false, raw: "", cleaned: "", message: `Zone playlist platine ${deck} non calibrée.` };
       if (!playlist) return { ok: false, raw: "", cleaned: "", message: "Bouton Playlist non calibré." };
       setState((s) => ({ ...s, phase: "testing", deck }));
       try {
-        log("info", `Test zone Nom platine ${deck} : ouverture playlist…`);
+        log("info", `Test zone playlist platine ${deck} : ouverture playlist…`);
         await bridgeRef.current.openApp();
         await sleep(settings.waitOnOpenMs);
         await bridgeRef.current.tapNext(deck, { point: playlist, pressDurationMs: settings.pressDurationMs });
         await sleep(settings.waitAfterPlaylistOpenMs);
-        const { raw, cleaned } = await readAndCleanNameOnce(bridgeRef.current, deck, zone);
+        const read = await readActivePlaylistRowOnce(bridgeRef.current, deck, zone);
         // Best-effort return to main so the user isn't stuck.
         if (back) {
           try {
@@ -1247,17 +1269,28 @@ export function useDiscDJRobot() {
           } catch { /* ignore */ }
         }
         setState((s) => ({ ...s, phase: "idle" }));
-        if (cleaned) {
-          const msg = `OCR brut : « ${raw} » · nettoyé : « ${cleaned} »`;
-          log("success", `Test zone Nom platine ${deck} : ${msg}`);
-          return { ok: true, raw, cleaned, message: msg };
+        const diag = {
+          zoneImage: read.zoneImage ?? null,
+          activeRowImage: read.activeRowImage ?? null,
+          activeRowFraction: read.activeRowFraction ?? null,
+          reason: read.reason ?? null,
+        };
+        if (read.reason === "no-active-row") {
+          const msg = "Aucune ligne active (fond bleu) détectée — recalibre la zone playlist en englobant toute la liste.";
+          log("warning", `Test zone playlist platine ${deck} : ${msg}`);
+          return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
         }
-        const msg = "Zone lue mais aucun texte détecté — élargis le rectangle ou recalibre.";
-        log("warning", `Test zone Nom platine ${deck} : ${msg}`);
-        return { ok: false, raw, cleaned, message: msg };
+        if (read.cleaned) {
+          const msg = `Ligne active détectée · OCR : « ${read.cleaned} »`;
+          log("success", `Test zone playlist platine ${deck} : ${msg}`);
+          return { ok: true, raw: read.raw, cleaned: read.cleaned, message: msg, ...diag };
+        }
+        const msg = "Ligne active détectée mais OCR vide — vérifie que la zone contient bien les titres lisibles.";
+        log("warning", `Test zone playlist platine ${deck} : ${msg}`);
+        return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
       } catch (e) {
         const message = describe(e);
-        log("error", `Test zone Nom platine ${deck} échoué : ${message}`);
+        log("error", `Test zone playlist platine ${deck} échoué : ${message}`);
         setState((s) => ({ ...s, phase: "error", errorMessage: message }));
         return { ok: false, raw: "", cleaned: "", message };
       }
@@ -1774,6 +1807,57 @@ async function readNameWithRetries(
     if (i < attempts) await sleep(350);
   }
   return { ocrName: bestOcr, match: bestMatch };
+}
+
+/**
+ * AutoSync-name — read the currently-loaded row inside a calibrated playlist
+ * zone. The native side scans the full zone for the DiscDJ blue "selected
+ * row", isolates it, then OCRs only that row. Cleans the resulting text and
+ * builds candidate strings for library matching.
+ */
+export async function readActivePlaylistRowOnce(
+  bridge: DiscDJBridge,
+  deck: DeckId,
+  playlistZone: import("./discdj-settings").CalibrationRect,
+): Promise<{
+  raw: string;
+  cleaned: string;
+  zoneTexts: string[];
+  candidates: string[];
+  reason: string | null;
+  zoneImage?: string | null;
+  activeRowImage?: string | null;
+  activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+}> {
+  if (typeof bridge.readPlaylistActiveName !== "function") {
+    // Fallback: legacy behavior — OCR the whole zone as-is.
+    const fallback = await readAndCleanNameOnce(bridge, deck, playlistZone);
+    return { ...fallback, reason: null };
+  }
+  try {
+    const r = await bridge.readPlaylistActiveName(deck, playlistZone);
+    const zoneTexts = (r.zoneTexts ?? []).map((s) => s.trim()).filter(Boolean);
+    const raw = r.raw ?? (zoneTexts.length > 0 ? zoneTexts.join(" ") : "");
+    const candidates = buildOcrNameCandidates(raw, zoneTexts);
+    return {
+      raw,
+      cleaned: r.name ?? candidates[0] ?? "",
+      zoneTexts,
+      candidates,
+      reason: r.reason ?? null,
+      zoneImage: r.zoneImage ?? null,
+      activeRowImage: r.activeRowImage ?? null,
+      activeRowFraction: r.activeRowFraction ?? null,
+    };
+  } catch (e) {
+    return {
+      raw: "",
+      cleaned: "",
+      zoneTexts: [],
+      candidates: [],
+      reason: `capture-failed: ${describe(e)}`,
+    };
+  }
 }
 
 /**
