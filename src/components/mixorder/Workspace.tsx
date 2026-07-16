@@ -111,7 +111,7 @@ export function Workspace() {
           className="flex items-center gap-2.5 rounded-xl px-1 py-1 transition-opacity hover:opacity-85"
           aria-label="Retour à la bibliothèque"
         >
-          <Logo size={30} />
+          <Logo size={44} />
           <span className="font-display text-[17px] font-bold tracking-tight text-foreground">
             MixOrder
           </span>
