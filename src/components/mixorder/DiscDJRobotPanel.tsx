@@ -53,8 +53,8 @@ const TARGETS: Array<{ id: CalibrationTarget; label: string; icon: "point" | "zo
 const AUTOSYNC_TARGETS: Array<{ id: CalibrationTarget; label: string; icon: "point" | "zone"; screen: "main" | "playlist" }> = [
   { id: "playlistButton", label: "Bouton Playlist (écran principal)", icon: "point", screen: "main" },
   { id: "backButton", label: "Bouton Retour (dans la playlist)", icon: "point", screen: "playlist" },
-  { id: "playlistZoneDeck1", label: "Zone Nom du morceau · platine 1 (playlist)", icon: "zone", screen: "playlist" },
-  { id: "playlistZoneDeck2", label: "Zone Nom du morceau · platine 2 (playlist)", icon: "zone", screen: "playlist" },
+  { id: "playlistZoneDeck1", label: "Zone complète playlist · platine 1 (englobe toute la liste)", icon: "zone", screen: "playlist" },
+  { id: "playlistZoneDeck2", label: "Zone complète playlist · platine 2 (englobe toute la liste)", icon: "zone", screen: "playlist" },
 ];
 
 
