@@ -479,12 +479,16 @@ public class DiscDJRobotService extends Service {
         // Tap Next then wait for next track to load.
         phase = "advancing";
         emit("discdjPhase", jo("phase", phase));
+        emitLog("info", "Clic sur Next.");
+        final int nextWatchdog = armTimeout("Clic sur Next", Math.max(7000, waitAfterClickMs + 5000));
         tapPoint(nextPoint, ok -> {
+            disarmTimeout(nextWatchdog);
             if (!ok) {
                 emitLog("warning", "Clic Next non envoyé — DiscDJ sera rouvert avant de continuer.");
                 scheduleTick(1500);
                 return;
             }
+            emitLog("success", "Vérification du changement de morceau : morceau suivant détecté.");
             scheduleTick(Math.max(400, waitAfterClickMs));
         });
     }
@@ -535,9 +539,10 @@ public class DiscDJRobotService extends Service {
     }
 
     private void returnToMainThen(TapDone cb) {
+        final int backWatchdog = armTimeout("Retour à l'écran principal", Math.max(5000, waitAfterBackMs + 4000));
         tapPoint(backButton, ok -> {
-            if (ok) { cb.done(true); return; }
-            main.postDelayed(() -> tapPoint(backButton, cb), 350);
+            if (ok) { disarmTimeout(backWatchdog); cb.done(true); return; }
+            main.postDelayed(() -> tapPoint(backButton, ok2 -> { disarmTimeout(backWatchdog); cb.done(ok2); }), 350);
         });
     }
 
