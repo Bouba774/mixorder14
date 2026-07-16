@@ -97,7 +97,11 @@ export interface BackgroundRunOptions {
   bpmZone: CalibrationRect | null;
   playlistButton?: CalibrationPoint | null;
   backButton?: CalibrationPoint | null;
-  nameZone?: CalibrationRect | null;
+  /**
+   * AutoSync-name: full playlist list rectangle. The native side scans it
+   * for the currently-loaded blue row, isolates that row, and OCRs it.
+   */
+  playlistZone?: CalibrationRect | null;
   skipAlreadyBpm: boolean;
   replaceExisting: boolean;
   waitOnOpenMs: number;
@@ -108,6 +112,39 @@ export interface BackgroundRunOptions {
   pressDurationMs: number;
   maxAttempts: number;
   nameMaxOcrRetries?: number;
+}
+
+/**
+ * AutoSync-name: read of the currently-loaded row inside a calibrated
+ * playlist zone. The native side detects the blue "selected row" by pixel
+ * analysis, crops it, then runs OCR on that row only.
+ */
+export interface PlaylistActiveNameReading {
+  /** Cleaned/best OCR text for the active row; null when no row detected. */
+  name: string | null;
+  /** Raw joined OCR text (may include row noise). */
+  raw?: string | null;
+  /** Every OCR line captured on the isolated active row. */
+  zoneTexts?: string[];
+  /**
+   * Diagnostic reason when `name` is null:
+   *  - "no-active-row" : no blue selected row was detected inside the zone.
+   *  - "ocr-empty"     : row detected but OCR returned no readable text.
+   *  - "capture-failed" or freeform message from the native layer.
+   */
+  reason?: string | null;
+  /** Full playlist zone image (data URL) — for the test-mode preview. */
+  zoneImage?: string | null;
+  /** Isolated active-row image (data URL) — for the test-mode preview. */
+  activeRowImage?: string | null;
+  /**
+   * Active-row rectangle expressed as fractions of the CAPTURED ZONE
+   * (0..1). Lets the UI paint an overlay on top of `zoneImage`.
+   */
+  activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+  sourceOk?: boolean;
+  orientationOk?: boolean;
+  sourcePackage?: string | null;
 }
 
 export interface BackgroundStatus {
