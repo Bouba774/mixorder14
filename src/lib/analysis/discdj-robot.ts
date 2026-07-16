@@ -36,7 +36,7 @@ import {
 } from "./persistence";
 import type { AnalysisSnapshot } from "./types";
 import { findBestMatch, normalizeTrackName, similarity } from "./name-normalize";
-import { appendJournal, type JournalEntry } from "./robot-journal";
+import { appendJournal, appendRobotAction, type JournalEntry } from "./robot-journal";
 import { keyAnalysisEngine } from "@/lib/key-analysis/engine";
 
 /**
@@ -170,6 +170,8 @@ export function useDiscDJRobot() {
   const pendingResolverRef = useRef<((v: TrackId | null) => void) | null>(null);
 
   const log = useCallback((level: RobotLogLevel, message: string) => {
+    const project = projectRef.current;
+    if (project) appendRobotAction(projectFingerprint(project), level, message);
     setState((s) => ({
       ...s,
       logs: [
@@ -730,6 +732,7 @@ export function useDiscDJRobot() {
             processedRef.current.add(matched.id);
             foundBpms.push({ index: i + 1, name: matched.name, bpm, ocrName: cleaned, score: match.score });
             appendJournal(fingerprint, {
+              kind: "track",
               ts: Date.now(),
               trackId: matched.id,
               name: matched.name,
@@ -747,7 +750,7 @@ export function useDiscDJRobot() {
             snapshot = rememberAlias(snapshot, p.name, normalizeTitle(cleaned), matched.path);
             saveSnapshot(fingerprint, snapshot);
 
-            log("success", `${progress} BPM ${bpm} · « ${cleaned} » → « ${matched.name} » ✓`);
+              log("success", `${progress} BPM détecté : ${bpm}. Nom détecté : ${cleaned}. Association du BPM à « ${matched.name} » ✓`);
             setState((s) => ({
               ...s,
               currentTrack: matched,
@@ -890,6 +893,7 @@ export function useDiscDJRobot() {
               processedRef.current.add(track.id);
               foundBpms.push({ index: i + 1, name: track.name, bpm: voted.bpm });
               appendJournal(fingerprint, {
+                kind: "track",
                 ts: Date.now(),
                 trackId: track.id,
                 name: track.name,
@@ -922,6 +926,7 @@ export function useDiscDJRobot() {
               missing.push({ index: i + 1, name: track.name });
               const reason = reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
               appendJournal(fingerprint, {
+                kind: "track",
                 ts: Date.now(),
                 trackId: track.id,
                 name: track.name,
