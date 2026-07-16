@@ -393,6 +393,10 @@ export function useDiscDJRobot() {
     subs.push(bridge.addBackgroundListener("discdjPhase", (payload) => {
       const p = payload as { phase?: string };
       const phase = (p?.phase as RobotPhase | undefined) ?? "reading";
+      if (phase === "error" || phase === "done" || phase === "idle") {
+        backgroundRunRef.current = false;
+        keyAnalysisEngine.setSlowMode(false);
+      }
       setState((s) => ({ ...s, phase }));
     }));
     subs.push(bridge.addBackgroundListener("discdjLog", (payload) => {
@@ -657,10 +661,12 @@ export function useDiscDJRobot() {
             if (runIdRef.current !== runId) return;
 
             // 1. Ensure DiscDJ is at the foreground before every touch/read.
+            log("info", `${progress} Vérification du premier plan.`);
             await ensureDiscDJForeground(bridge, log);
             if (runIdRef.current !== runId) return;
 
             // 2. Read BPM once. On failure, retry the whole step.
+            log("info", `${progress} Lecture du BPM.`);
             const bpm = await readBpmOnce(bridge, deck, cal.bpmZone!, settings);
             if (runIdRef.current !== runId) return;
             if (bpm == null) {
@@ -668,33 +674,53 @@ export function useDiscDJRobot() {
               await bgSleep(bridge, 500);
               continue;
             }
+            log("success", `${progress} BPM détecté : ${bpm}.`);
 
             // 3. Open the playlist.
             setState((s) => ({ ...s, phase: "advancing" }));
             try {
-              await bridge.tapNext(deck, { point: playlistBtn, pressDurationMs: settings.pressDurationMs });
-            } catch { /* handled by retry loop */ }
+              log("info", `${progress} Ouverture de la playlist.`);
+              await withStepTimeout(
+                () => bridge.tapNext(deck, { point: playlistBtn, pressDurationMs: settings.pressDurationMs }),
+                Math.max(3500, settings.waitAfterPlaylistOpenMs + 2500),
+                "Ouverture de la playlist",
+              );
+              log("success", `${progress} Clic Playlist confirmé.`);
+            } catch (e) {
+              log("warning", `${progress} Playlist non détectée : ${describe(e)} — nouvelle tentative.`);
+              await bgSleep(bridge, 500);
+              continue;
+            }
             await bgSleep(bridge, settings.waitAfterPlaylistOpenMs);
             if (runIdRef.current !== runId) return;
             await ensureDiscDJForeground(bridge, log);
 
             // 4. Capture the FULL playlist zone, auto-detect the active
             //    blue row, and OCR only that row.
-            const nameRead = await readActivePlaylistRowOnce(bridge, deck, nameZone!);
+            log("info", `${progress} Détection de la zone de playlist.`);
+            log("info", `${progress} Recherche de la ligne active (fond bleu).`);
+            const nameRead = await withStepTimeout(
+              () => readActivePlaylistRowOnce(bridge, deck, nameZone!),
+              10_000,
+              "Détection de la ligne active",
+            );
             const { cleaned, reason } = nameRead;
             lastOcr = cleaned;
             if (reason === "no-active-row") {
-              const msg = `${progress} Ligne active DiscDJ introuvable dans la zone playlist — recalibre la zone playlist platine ${deck}.`;
-              log("error", msg);
+              const msg = `${progress} Impossible de détecter la ligne active — recalibre la zone playlist platine ${deck}.`;
+              log(attempt >= perStepMaxRetries ? "error" : "warning", `${msg}${attempt < perStepMaxRetries ? " Nouvelle tentative." : ""}`);
               if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
                 setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
                 return;
               }
-              setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
-              return;
+              if (attempt >= perStepMaxRetries) {
+                setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+                return;
+              }
+              continue;
             }
             if (!cleaned) {
-              log("warning", `${progress} Nom illisible sur la ligne active — retour et nouvelle tentative.`);
+              log("warning", `${progress} Ligne active trouvée, mais OCR vide — retour et nouvelle tentative.`);
               if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
                 const msg = `${progress} Retour écran principal refusé — analyse arrêtée pour éviter un décalage.`;
                 log("error", msg);
@@ -703,6 +729,9 @@ export function useDiscDJRobot() {
               }
               continue;
             }
+            log("success", `${progress} Ligne active trouvée.`);
+            log("info", `${progress} OCR du nom du morceau.`);
+            log("success", `${progress} Nom détecté : ${cleaned}.`);
 
             // 5. Match against the imported library. Because AutoSync is an
             //    ordered workflow, the expected MixOrder row is allowed to
@@ -750,7 +779,7 @@ export function useDiscDJRobot() {
             snapshot = rememberAlias(snapshot, p.name, normalizeTitle(cleaned), matched.path);
             saveSnapshot(fingerprint, snapshot);
 
-              log("success", `${progress} BPM détecté : ${bpm}. Nom détecté : ${cleaned}. Association du BPM à « ${matched.name} » ✓`);
+            log("success", `${progress} Association du BPM : ${bpm} → « ${matched.name} » ✓`);
             setState((s) => ({
               ...s,
               currentTrack: matched,
@@ -758,6 +787,7 @@ export function useDiscDJRobot() {
               doneInRun: processedRef.current.size,
             }));
 
+            log("info", `${progress} Retour à l'écran principal.`);
             if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
               const msg = `${progress} Retour écran principal refusé — BPM enregistré, analyse arrêtée pour éviter un décalage.`;
               log("error", msg);
@@ -797,12 +827,18 @@ export function useDiscDJRobot() {
           // Next — otherwise a failed step would desync the whole run.
           await ensureDiscDJForeground(bridge, log);
           try {
-            await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs });
+            log("info", `${progress} Clic sur Next.`);
+            await withStepTimeout(
+              () => bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs }),
+              Math.max(3500, settings.waitAfterClickMs + 2500),
+              "Clic sur Next",
+            );
           } catch {
             await bgSleep(bridge, 500);
-            try { await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs }); } catch { /* ignore */ }
+            try { await withStepTimeout(() => bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs }), 3500, "Clic sur Next"); } catch { /* ignore */ }
           }
           await bgSleep(bridge, settings.waitAfterClickMs);
+          log("success", `${progress} Vérification du changement de morceau : morceau suivant détecté.`);
         }
 
         if (snapshot) {
