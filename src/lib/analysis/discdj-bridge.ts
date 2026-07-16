@@ -473,23 +473,6 @@ function calibrationInstruction(target: CalibrationTarget): string {
       return "Touche l'emplacement à calibrer";
   }
 }
-      return "Touche le bouton NEXT de la platine 1 dans DiscDJ";
-    case "nextDeck2":
-      return "Touche le bouton NEXT de la platine 2 dans DiscDJ";
-    case "bpmDeck1":
-      return "Encadre la zone BPM de la platine 1 (glisse un rectangle)";
-    case "bpmDeck2":
-      return "Encadre la zone BPM de la platine 2 (glisse un rectangle)";
-    case "playlistButton":
-      return "Touche le bouton PLAYLIST dans DiscDJ";
-    case "backButton":
-      return "Touche le bouton RETOUR (flèche haut) depuis la playlist";
-    case "nameZoneDeck1":
-      return "Encadre la zone du nom du morceau chargé (haut de la playlist, platine 1)";
-    case "nameZoneDeck2":
-      return "Encadre la zone du nom du morceau chargé (haut de la playlist, platine 2)";
-  }
-}
 
 function parseDurationText(s: string | null | undefined): number | null {
   if (!s) return null;
