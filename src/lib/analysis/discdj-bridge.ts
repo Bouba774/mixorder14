@@ -460,7 +460,18 @@ interface NativeDiscDJRobot {
     height?: number;
   }>;
   readBpm(opts: { deck: DeckId; bpmZone?: CalibrationRect | null }): Promise<NativeReading>;
-  tapNext(opts: {
+  readPlaylistActiveName?(opts: { deck: DeckId; playlistZone: CalibrationRect }): Promise<{
+    name: string | null;
+    raw?: string | null;
+    zoneTexts?: string[];
+    reason?: string | null;
+    zoneImage?: string | null;
+    activeRowImage?: string | null;
+    activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+    sourceOk?: boolean;
+    orientationOk?: boolean;
+    sourcePackage?: string | null;
+  }>;
     deck: DeckId;
     point?: CalibrationPoint | null;
     pressDurationMs?: number;
