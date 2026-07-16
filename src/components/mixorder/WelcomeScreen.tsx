@@ -87,9 +87,8 @@ export function WelcomeScreen() {
       >
         {/* Brand */}
         <div className="flex flex-col items-center text-center">
-          <div className="grid h-20 w-20 place-items-center rounded-3xl bg-surface shadow-card">
-            <Logo size={44} />
-          </div>
+          <Logo size={120} glow className="animate-fade-up" />
+
 
           <h1 className="mt-6 font-display text-[26px] font-bold leading-tight tracking-tight text-foreground">
             Organisez votre bibliothèque
