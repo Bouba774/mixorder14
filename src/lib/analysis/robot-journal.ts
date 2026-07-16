@@ -13,16 +13,21 @@ const KEY_PREFIX = "mixorder:robot-journal:";
 const MAX_ENTRIES = 500;
 
 export type JournalOutcome = "success" | "retry" | "error" | "skipped";
+export type JournalKind = "track" | "action";
+export type JournalLevel = "info" | "success" | "warning" | "error";
 
 export interface JournalEntry {
+  /** `track` entries summarize a processed track, `action` entries are the live robot timeline. */
+  kind?: JournalKind;
   ts: number;
-  trackId: string;
-  name: string;
-  bpm: number | null;
-  outcome: JournalOutcome;
+  trackId?: string;
+  name?: string;
+  bpm?: number | null;
+  outcome?: JournalOutcome;
+  level?: JournalLevel;
   /** Milliseconds spent reading DiscDJ for this specific track. */
-  durationMs: number;
-  attempts: number;
+  durationMs?: number;
+  attempts?: number;
   message?: string;
 }
 
@@ -56,6 +61,19 @@ export function appendJournal(
   }
   notifyListeners(fingerprint, list);
   return list;
+}
+
+export function appendRobotAction(
+  fingerprint: string,
+  level: JournalLevel,
+  message: string,
+): JournalEntry[] {
+  return appendJournal(fingerprint, {
+    kind: "action",
+    ts: Date.now(),
+    level,
+    message,
+  });
 }
 
 export function clearJournal(fingerprint: string): void {

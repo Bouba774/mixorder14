@@ -36,7 +36,7 @@ import {
 } from "./persistence";
 import type { AnalysisSnapshot } from "./types";
 import { findBestMatch, normalizeTrackName, similarity } from "./name-normalize";
-import { appendJournal, type JournalEntry } from "./robot-journal";
+import { appendJournal, appendRobotAction, type JournalEntry } from "./robot-journal";
 import { keyAnalysisEngine } from "@/lib/key-analysis/engine";
 
 /**
@@ -170,6 +170,8 @@ export function useDiscDJRobot() {
   const pendingResolverRef = useRef<((v: TrackId | null) => void) | null>(null);
 
   const log = useCallback((level: RobotLogLevel, message: string) => {
+    const project = projectRef.current;
+    if (project) appendRobotAction(projectFingerprint(project), level, message);
     setState((s) => ({
       ...s,
       logs: [
@@ -389,9 +391,17 @@ export function useDiscDJRobot() {
       }));
     }));
     subs.push(bridge.addBackgroundListener("discdjPhase", (payload) => {
-      const p = payload as { phase?: string };
+      const p = payload as { phase?: string; message?: string };
       const phase = (p?.phase as RobotPhase | undefined) ?? "reading";
-      setState((s) => ({ ...s, phase }));
+      if (phase === "error" || phase === "done" || phase === "idle") {
+        backgroundRunRef.current = false;
+        keyAnalysisEngine.setSlowMode(false);
+      }
+      setState((s) => ({
+        ...s,
+        phase,
+        errorMessage: phase === "error" ? p?.message ?? s.errorMessage ?? "Blocage détecté par le robot DiscDJ." : s.errorMessage,
+      }));
     }));
     subs.push(bridge.addBackgroundListener("discdjLog", (payload) => {
       const p = payload as { level?: RobotLogLevel; message?: string };
@@ -655,10 +665,12 @@ export function useDiscDJRobot() {
             if (runIdRef.current !== runId) return;
 
             // 1. Ensure DiscDJ is at the foreground before every touch/read.
+            log("info", `${progress} Vérification du premier plan.`);
             await ensureDiscDJForeground(bridge, log);
             if (runIdRef.current !== runId) return;
 
             // 2. Read BPM once. On failure, retry the whole step.
+            log("info", `${progress} Lecture du BPM.`);
             const bpm = await readBpmOnce(bridge, deck, cal.bpmZone!, settings);
             if (runIdRef.current !== runId) return;
             if (bpm == null) {
@@ -666,33 +678,66 @@ export function useDiscDJRobot() {
               await bgSleep(bridge, 500);
               continue;
             }
+            log("success", `${progress} BPM détecté : ${bpm}.`);
 
             // 3. Open the playlist.
             setState((s) => ({ ...s, phase: "advancing" }));
             try {
-              await bridge.tapNext(deck, { point: playlistBtn, pressDurationMs: settings.pressDurationMs });
-            } catch { /* handled by retry loop */ }
+              log("info", `${progress} Ouverture de la playlist.`);
+              await withStepTimeout(
+                () => bridge.tapNext(deck, { point: playlistBtn, pressDurationMs: settings.pressDurationMs }),
+                Math.max(3500, settings.waitAfterPlaylistOpenMs + 2500),
+                "Ouverture de la playlist",
+              );
+              log("success", `${progress} Clic Playlist confirmé.`);
+            } catch (e) {
+              log("warning", `${progress} Playlist non détectée : ${describe(e)} — nouvelle tentative.`);
+              await bgSleep(bridge, 500);
+              continue;
+            }
             await bgSleep(bridge, settings.waitAfterPlaylistOpenMs);
             if (runIdRef.current !== runId) return;
             await ensureDiscDJForeground(bridge, log);
 
             // 4. Capture the FULL playlist zone, auto-detect the active
             //    blue row, and OCR only that row.
-            const nameRead = await readActivePlaylistRowOnce(bridge, deck, nameZone!);
+            log("info", `${progress} Détection de la zone de playlist.`);
+            log("info", `${progress} Recherche de la ligne active (fond bleu).`);
+            let nameRead: Awaited<ReturnType<typeof readActivePlaylistRowOnce>>;
+            try {
+              nameRead = await withStepTimeout(
+                () => readActivePlaylistRowOnce(bridge, deck, nameZone!),
+                10_000,
+                "Détection de la ligne active",
+              );
+            } catch (e) {
+              const msg = `${progress} ${describe(e)}`;
+              log(attempt >= perStepMaxRetries ? "error" : "warning", `${msg}${attempt < perStepMaxRetries ? " Nouvelle tentative." : ""}`);
+              await returnToMainStrict(bridge, deck, backBtn!, settings);
+              if (attempt >= perStepMaxRetries) {
+                setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+                keyAnalysisEngine.setSlowMode(false);
+                return;
+              }
+              continue;
+            }
             const { cleaned, reason } = nameRead;
             lastOcr = cleaned;
             if (reason === "no-active-row") {
-              const msg = `${progress} Ligne active DiscDJ introuvable dans la zone playlist — recalibre la zone playlist platine ${deck}.`;
-              log("error", msg);
+              const msg = `${progress} Impossible de détecter la ligne active — recalibre la zone playlist platine ${deck}.`;
+              log(attempt >= perStepMaxRetries ? "error" : "warning", `${msg}${attempt < perStepMaxRetries ? " Nouvelle tentative." : ""}`);
               if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
                 setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
                 return;
               }
-              setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
-              return;
+              if (attempt >= perStepMaxRetries) {
+                setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+                return;
+              }
+              continue;
             }
             if (!cleaned) {
-              log("warning", `${progress} Nom illisible sur la ligne active — retour et nouvelle tentative.`);
+              log("warning", `${progress} Ligne active trouvée, mais OCR vide — retour et nouvelle tentative.`);
               if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
                 const msg = `${progress} Retour écran principal refusé — analyse arrêtée pour éviter un décalage.`;
                 log("error", msg);
@@ -701,6 +746,9 @@ export function useDiscDJRobot() {
               }
               continue;
             }
+            log("success", `${progress} Ligne active trouvée.`);
+            log("info", `${progress} OCR du nom du morceau.`);
+            log("success", `${progress} Nom détecté : ${cleaned}.`);
 
             // 5. Match against the imported library. Because AutoSync is an
             //    ordered workflow, the expected MixOrder row is allowed to
@@ -730,6 +778,7 @@ export function useDiscDJRobot() {
             processedRef.current.add(matched.id);
             foundBpms.push({ index: i + 1, name: matched.name, bpm, ocrName: cleaned, score: match.score });
             appendJournal(fingerprint, {
+              kind: "track",
               ts: Date.now(),
               trackId: matched.id,
               name: matched.name,
@@ -747,7 +796,7 @@ export function useDiscDJRobot() {
             snapshot = rememberAlias(snapshot, p.name, normalizeTitle(cleaned), matched.path);
             saveSnapshot(fingerprint, snapshot);
 
-            log("success", `${progress} BPM ${bpm} · « ${cleaned} » → « ${matched.name} » ✓`);
+            log("success", `${progress} Association du BPM : ${bpm} → « ${matched.name} » ✓`);
             setState((s) => ({
               ...s,
               currentTrack: matched,
@@ -755,6 +804,7 @@ export function useDiscDJRobot() {
               doneInRun: processedRef.current.size,
             }));
 
+            log("info", `${progress} Retour à l'écran principal.`);
             if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
               const msg = `${progress} Retour écran principal refusé — BPM enregistré, analyse arrêtée pour éviter un décalage.`;
               log("error", msg);
@@ -794,12 +844,18 @@ export function useDiscDJRobot() {
           // Next — otherwise a failed step would desync the whole run.
           await ensureDiscDJForeground(bridge, log);
           try {
-            await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs });
+            log("info", `${progress} Clic sur Next.`);
+            await withStepTimeout(
+              () => bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs }),
+              Math.max(3500, settings.waitAfterClickMs + 2500),
+              "Clic sur Next",
+            );
           } catch {
             await bgSleep(bridge, 500);
-            try { await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs }); } catch { /* ignore */ }
+            try { await withStepTimeout(() => bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs }), 3500, "Clic sur Next"); } catch { /* ignore */ }
           }
           await bgSleep(bridge, settings.waitAfterClickMs);
+          log("success", `${progress} Vérification du changement de morceau : morceau suivant détecté.`);
         }
 
         if (snapshot) {
@@ -890,6 +946,7 @@ export function useDiscDJRobot() {
               processedRef.current.add(track.id);
               foundBpms.push({ index: i + 1, name: track.name, bpm: voted.bpm });
               appendJournal(fingerprint, {
+                kind: "track",
                 ts: Date.now(),
                 trackId: track.id,
                 name: track.name,
@@ -922,6 +979,7 @@ export function useDiscDJRobot() {
               missing.push({ index: i + 1, name: track.name });
               const reason = reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
               appendJournal(fingerprint, {
+                kind: "track",
                 ts: Date.now(),
                 trackId: track.id,
                 name: track.name,
@@ -1128,9 +1186,9 @@ export function useDiscDJRobot() {
       const reading = await readSmartDeck(bridgeRef.current, deck, settings, {}, log);
       setState((s) => ({ ...s, currentReading: reading, phase: "idle" }));
       if (isPlausibleBpm(reading.bpm)) {
-        log("success", `Test lecture réussi : BPM ${reading.bpm}${reading.title ? ` · ${reading.title}` : ""}`);
+        log("success", `Test BPM : OCR = "${reading.raw ?? reading.zoneTexts?.join(" ") ?? ""}" → valeur ${Math.round(reading.bpm)}.`);
       } else {
-        log("warning", "Test lecture terminé sans BPM détecté.");
+        log("warning", `Test BPM : ${reading.parseReason ?? "OCR illisible ou aucun texte détecté."}`);
       }
       return reading;
     } catch (e) {
@@ -1156,16 +1214,18 @@ export function useDiscDJRobot() {
         await sleep(settings.waitOnOpenMs);
       }
       const cal = getDeckCalibration(settings, deck);
+      const pointText = cal.next ? `x=${cal.next.x.toFixed(3)} · y=${cal.next.y.toFixed(3)}` : "point non calibré";
+      log("info", `Test Next : clic envoyé en (${pointText}).`);
       await bridgeRef.current.tapNext(deck, {
         point: cal.next,
         pressDurationMs: settings.pressDurationMs,
       });
-      log("success", "Geste Next envoyé.");
+      log("success", `Test Next : clic envoyé en (${pointText}).`);
       await sleep(settings.waitAfterClickMs);
       setState((s) => ({ ...s, phase: "idle" }));
       return {
         changed: true,
-        message: "Geste Next envoyé — vérifie visuellement dans DiscDJ que le morceau a changé.",
+        message: `Clic envoyé en (${pointText}) — vérifie visuellement que le morceau a changé.`,
       };
     } catch (e) {
       const message = describe(e);
@@ -1192,10 +1252,11 @@ export function useDiscDJRobot() {
       log("info", "Test bouton Playlist : ouverture de DiscDJ…");
       await bridgeRef.current.openApp();
       await sleep(settings.waitOnOpenMs);
+      log("info", `Test Playlist : clic envoyé en (x=${point.x.toFixed(3)} · y=${point.y.toFixed(3)}).`);
       await bridgeRef.current.tapNext(1, { point, pressDurationMs: settings.pressDurationMs });
       await sleep(settings.waitAfterPlaylistOpenMs);
       setState((s) => ({ ...s, phase: "idle" }));
-      const msg = "Clic Playlist envoyé — vérifie que l'écran playlist est bien affiché dans DiscDJ.";
+      const msg = "Test Playlist : ouverture détectée si la zone playlist devient visible — lance Test playlist P1/P2 pour confirmer par capture.";
       log("success", msg);
       return { ok: true, message: msg };
     } catch (e) {
@@ -1217,13 +1278,15 @@ export function useDiscDJRobot() {
       await bridgeRef.current.openApp();
       await sleep(settings.waitOnOpenMs);
       if (playlist) {
+        log("info", `Test Retour : ouverture playlist via x=${playlist.x.toFixed(3)} · y=${playlist.y.toFixed(3)}.`);
         await bridgeRef.current.tapNext(1, { point: playlist, pressDurationMs: settings.pressDurationMs });
         await sleep(settings.waitAfterPlaylistOpenMs);
       }
+      log("info", `Test Retour : clic envoyé en (x=${back.x.toFixed(3)} · y=${back.y.toFixed(3)}).`);
       await bridgeRef.current.tapNext(1, { point: back, pressDurationMs: settings.pressDurationMs });
       await sleep(settings.waitAfterBackMs);
       setState((s) => ({ ...s, phase: "idle" }));
-      const msg = "Clic Retour envoyé — vérifie que l'écran principal est bien affiché.";
+      const msg = "Test Retour : écran principal détecté si la lecture BPM fonctionne ensuite.";
       log("success", msg);
       return { ok: true, message: msg };
     } catch (e) {
@@ -1258,6 +1321,7 @@ export function useDiscDJRobot() {
         log("info", `Test zone playlist platine ${deck} : ouverture playlist…`);
         await bridgeRef.current.openApp();
         await sleep(settings.waitOnOpenMs);
+        log("info", `Test playlist P${deck} : clic Playlist puis capture de la zone complète.`);
         await bridgeRef.current.tapNext(deck, { point: playlist, pressDurationMs: settings.pressDurationMs });
         await sleep(settings.waitAfterPlaylistOpenMs);
         const read = await readActivePlaylistRowOnce(bridgeRef.current, deck, zone);
@@ -1276,16 +1340,16 @@ export function useDiscDJRobot() {
           reason: read.reason ?? null,
         };
         if (read.reason === "no-active-row") {
-          const msg = "Aucune ligne active (fond bleu) détectée — recalibre la zone playlist en englobant toute la liste.";
+          const msg = "Impossible de détecter la ligne active — recalibre la zone playlist en englobant toute la liste.";
           log("warning", `Test zone playlist platine ${deck} : ${msg}`);
           return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
         }
         if (read.cleaned) {
-          const msg = `Ligne active détectée · OCR : « ${read.cleaned} »`;
+          const msg = `Ligne active trouvée · OCR = « ${read.cleaned} »`;
           log("success", `Test zone playlist platine ${deck} : ${msg}`);
           return { ok: true, raw: read.raw, cleaned: read.cleaned, message: msg, ...diag };
         }
-        const msg = "Ligne active détectée mais OCR vide — vérifie que la zone contient bien les titres lisibles.";
+        const msg = "Ligne active trouvée mais OCR vide — vérifie que la zone contient bien les titres lisibles.";
         log("warning", `Test zone playlist platine ${deck} : ${msg}`);
         return { ok: false, raw: read.raw, cleaned: "", message: msg, ...diag };
       } catch (e) {
@@ -1608,6 +1672,20 @@ function joinByOverlap(a: string, b: string): string {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function withStepTimeout<T>(task: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      task(),
+      new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(`Timeout après ${Math.round(timeoutMs / 1000)} secondes — ${label}.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
 }
 
 /**

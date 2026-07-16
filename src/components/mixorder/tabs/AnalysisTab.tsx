@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
-  AudioWaveform, BadgeCheck, CircleAlert, CirclePause, CirclePlay, Repeat, Zap, Gauge, RotateCcw,
+  AudioWaveform, BadgeCheck, CircleAlert, CirclePause, CirclePlay, Repeat, Zap, Gauge, RotateCcw, Bot,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MotionButton } from "../motion-primitives";
@@ -8,6 +8,7 @@ import { PageHeader } from "../PageHeader";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useKeyAnalysisEngine } from "@/hooks/useKeyAnalysisEngine";
 import { keyAnalysisEngine } from "@/lib/key-analysis/engine";
+import { useRobotJournal } from "@/hooks/useRobotJournal";
 
 function formatMs(ms: number): string {
   if (!ms || !isFinite(ms)) return "—";
@@ -30,6 +31,8 @@ function formatMs(ms: number): string {
 export function AnalysisTab() {
   const { project } = useWorkspace();
   const engine = useKeyAnalysisEngine();
+  const robotJournal = useRobotJournal();
+  const robotLogRef = useRef<HTMLUListElement | null>(null);
 
   const stats = useMemo(() => {
     const tracks = project?.tracks ?? [];
@@ -44,12 +47,17 @@ export function AnalysisTab() {
     };
   }, [project]);
 
-  if (!project) return null;
-
   const pct = stats.total === 0 ? 0 : Math.round((stats.withKey / stats.total) * 100);
   const speed = engine.avgMsPerTrack > 0
     ? `${(60000 / engine.avgMsPerTrack).toFixed(1)}/min`
     : "—";
+  const robotEntries = robotJournal.entries;
+
+  useEffect(() => {
+    if (robotLogRef.current) robotLogRef.current.scrollTop = 0;
+  }, [robotEntries.length]);
+
+  if (!project) return null;
 
   return (
     <div className="space-y-4">
@@ -217,6 +225,52 @@ export function AnalysisTab() {
               </span>
             </li>
           ))}
+        </ul>
+      </section>
+
+      <section className="rounded-xl border border-border bg-surface p-3">
+        <header className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/15 text-primary">
+              <Bot className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="font-display text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Journal Robot DiscDJ
+              </h3>
+              <p className="truncate text-[10px] text-muted-foreground">Actions en temps réel et diagnostic persistant</p>
+            </div>
+          </div>
+          {robotEntries.length > 0 && (
+            <button
+              onClick={robotJournal.clear}
+              className="inline-flex h-8 items-center rounded-lg border border-border px-2.5 text-[10px] font-semibold text-muted-foreground hover:border-destructive/60 hover:text-destructive"
+            >
+              Vider
+            </button>
+          )}
+        </header>
+        <ul ref={robotLogRef} className="max-h-80 overflow-auto rounded-lg border border-border/70 bg-background/60">
+          {robotEntries.length === 0 && (
+            <li className="px-3 py-3 text-center text-[11px] text-muted-foreground">
+              Aucun événement Robot pour le moment.
+            </li>
+          )}
+          {robotEntries.map((entry) => {
+            const tone = entry.level ?? (entry.outcome === "success" ? "success" : entry.outcome === "error" ? "error" : entry.outcome === "retry" ? "warning" : "info");
+            return (
+              <li key={`${entry.ts}-${entry.trackId ?? entry.message ?? "robot"}`} className="flex items-start gap-2 border-b border-border/60 px-3 py-2 text-[11px] last:border-b-0">
+                <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${tone === "error" ? "bg-destructive" : tone === "warning" ? "bg-amber-400" : tone === "success" ? "bg-emerald-500" : "bg-primary"}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-foreground/90">{entry.message ?? entry.name ?? "Action Robot"}</p>
+                  {entry.name && entry.kind !== "action" && <p className="truncate text-[10px] text-muted-foreground">{entry.name}</p>}
+                </div>
+                <span className="shrink-0 text-muted-foreground tabular-nums">
+                  {new Date(entry.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>

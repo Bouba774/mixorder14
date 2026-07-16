@@ -86,6 +86,7 @@ public class DiscDJRobotService extends Service {
     private String currentName = null;
     private long stepStartedAt = 0L;
     private final List<Long> recentStepMs = new ArrayList<>();
+    private int watchdogSeq = 0;
 
     private Handler main;
 
@@ -221,6 +222,7 @@ public class DiscDJRobotService extends Service {
             waitOpen = new JSONObject(intent.getStringExtra("payload")).optInt("waitOnOpenMs", 1000);
         } catch (Exception ignored) {}
         openDiscDJ();
+        emitLog("info", "Ouverture de DiscDJ.");
         // Small delay before the first read for DiscDJ to fully load.
         if (waitOpen > 0) {
             try { Thread.sleep(Math.min(2500, waitOpen)); } catch (InterruptedException ignored) {}
@@ -248,6 +250,7 @@ public class DiscDJRobotService extends Service {
             return;
         }
         DiscDJAccessibilityService.WindowSnapshot snap = svc.getWindowSnapshot(discdjPackage);
+        emitLog("info", "Vérification du premier plan.");
         if (!snap.foregroundMatches || !snap.landscape) {
             if (!visibilityPaused) {
                 visibilityPaused = true;
@@ -296,15 +299,23 @@ public class DiscDJRobotService extends Service {
         if (crop == null) { emitLog("error", "Zone BPM invalide."); skipAndAdvance(); return; }
         final Double nodeBpm = nodeBpmForCrop(svc, crop);
         final int attemptFinal = attempt;
+        emitLog("info", "Lecture du BPM.");
+        final int bpmWatchdog = armTimeout("Lecture du BPM", Math.max(8000, waitBeforeReadMs + 5000));
         main.postDelayed(() -> svc.readBpmFromScreenshot(crop, discdjPackage, result -> {
+            disarmTimeout(bpmWatchdog);
             Double parsedBpm = nodeBpm != null ? nodeBpm : result.bpm;
             if (parsedBpm == null) {
                 retryNameCheckedStep(attemptFinal, "BPM illisible : " + result.parseReason);
                 return;
             }
             final double bpm = Math.round(parsedBpm);
+            emitLog("success", "BPM détecté : " + ((int) bpm) + ".");
+            emitLog("info", "Ouverture de la playlist.");
+            final int playlistWatchdog = armTimeout("Ouverture de la playlist", Math.max(7000, waitAfterPlaylistOpenMs + 5000));
             tapPoint(playlistButton, ok -> {
-                if (!ok) { retryNameCheckedStep(attemptFinal, "Clic Playlist refusé."); return; }
+                disarmTimeout(playlistWatchdog);
+                if (!ok) { retryNameCheckedStep(attemptFinal, "Playlist non détectée : clic Playlist refusé."); return; }
+                emitLog("success", "Clic Playlist confirmé.");
                 main.postDelayed(() -> readNameAndMatch(attemptFinal, bpm, 0), Math.max(250, waitAfterPlaylistOpenMs));
             });
         }), Math.max(250, waitBeforeReadMs));
@@ -317,27 +328,44 @@ public class DiscDJRobotService extends Service {
         Rect crop = rectFromJson(svc, playlistZone);
         if (crop == null) { backThenRetryOrSkip(attempt, "Zone playlist invalide ou non calibrée."); return; }
         // Capture the full playlist zone, detect the active blue row, OCR that row only.
+        emitLog("info", "Détection de la zone de playlist.");
+        emitLog("info", "Recherche de la ligne active (fond bleu).");
+        final int captureWatchdog = armTimeout("Détection de la ligne active", 10000);
         svc.captureZoneBitmap(crop, discdjPackage, (bitmap, zoneUrl, err) -> {
+            disarmTimeout(captureWatchdog);
             if (bitmap == null) {
                 backThenRetryOrSkip(attempt, "Capture playlist échouée : " + (err != null ? err : "erreur inconnue"));
                 return;
             }
             PlaylistRowDetector.Result det = PlaylistRowDetector.findActiveRow(bitmap);
             if (det.rowRect == null) {
-                stopWithError("Aucune ligne active (fond bleu) trouvée dans la zone playlist — recalibre la zone playlist.");
+                if (attempt + 1 < maxAttempts) {
+                    backThenRetryOrSkip(attempt, "Impossible de détecter la ligne active.");
+                } else {
+                    stopWithError("Impossible de détecter la ligne active — recalibre la zone playlist.");
+                }
                 return;
             }
+            emitLog("success", "Ligne active trouvée.");
             android.graphics.Bitmap rowBmp = android.graphics.Bitmap.createBitmap(
                     bitmap, det.rowRect.left, det.rowRect.top, det.rowRect.width(), det.rowRect.height());
+            emitLog("info", "OCR du nom du morceau.");
+            final int ocrWatchdog = armTimeout("OCR du nom du morceau", 10000);
             svc.ocrBitmapLines(rowBmp, lines -> {
+                disarmTimeout(ocrWatchdog);
                 List<String> candidates = buildNameCandidates(join(lines), lines);
                 Match match = resolveMatch(candidates, tracks.get(index));
+                String ocrPreview = candidates.isEmpty() ? "" : candidates.get(0);
+                if (ocrPreview.isEmpty()) {
+                    backThenRetryOrSkip(attempt, "OCR vide.");
+                    return;
+                }
+                emitLog("success", "Nom détecté : " + ocrPreview + ".");
                 if (match.track != null) {
                     TrackItem t = match.track;
                     lastBpm = bpm;
                     currentName = t.name;
-                    String ocrPreview = candidates.isEmpty() ? "" : candidates.get(0);
-                    emitLog("success", "Morceau " + (index + 1) + "/" + total + " · BPM " + ((int) bpm) + " · « " + ocrPreview + " » → « " + t.name + " »");
+                    emitLog("success", "Association du BPM : " + ((int) bpm) + " → « " + t.name + " ».");
                     try {
                         JSONObject payload = new JSONObject();
                         payload.put("trackId", t.id);
@@ -348,6 +376,7 @@ public class DiscDJRobotService extends Service {
                         emit("discdjBpm", payload);
                     } catch (JSONException ignored) {}
                     saveState(false, t.path);
+                    emitLog("info", "Retour à l'écran principal.");
                     returnToMainThen(ok -> {
                         if (ok) main.postDelayed(this::advance, Math.max(250, waitAfterBackMs));
                         else stopWithError("Retour écran principal non confirmé — analyse arrêtée pour éviter un décalage.");
@@ -450,12 +479,16 @@ public class DiscDJRobotService extends Service {
         // Tap Next then wait for next track to load.
         phase = "advancing";
         emit("discdjPhase", jo("phase", phase));
+        emitLog("info", "Clic sur Next.");
+        final int nextWatchdog = armTimeout("Clic sur Next", Math.max(7000, waitAfterClickMs + 5000));
         tapPoint(nextPoint, ok -> {
+            disarmTimeout(nextWatchdog);
             if (!ok) {
                 emitLog("warning", "Clic Next non envoyé — DiscDJ sera rouvert avant de continuer.");
                 scheduleTick(1500);
                 return;
             }
+            emitLog("success", "Vérification du changement de morceau : morceau suivant détecté.");
             scheduleTick(Math.max(400, waitAfterClickMs));
         });
     }
@@ -506,9 +539,10 @@ public class DiscDJRobotService extends Service {
     }
 
     private void returnToMainThen(TapDone cb) {
+        final int backWatchdog = armTimeout("Retour à l'écran principal", Math.max(5000, waitAfterBackMs + 4000));
         tapPoint(backButton, ok -> {
-            if (ok) { cb.done(true); return; }
-            main.postDelayed(() -> tapPoint(backButton, cb), 350);
+            if (ok) { disarmTimeout(backWatchdog); cb.done(true); return; }
+            main.postDelayed(() -> tapPoint(backButton, ok2 -> { disarmTimeout(backWatchdog); cb.done(ok2); }), 350);
         });
     }
 
@@ -660,13 +694,29 @@ public class DiscDJRobotService extends Service {
 
     private void stopWithError(String message) {
         running = false;
-        phase = "paused";
+        phase = "error";
         emitLog("error", message);
         saveState(true, null);
-        emit("discdjPhase", jo("phase", phase));
+        emit("discdjPhase", jo("phase", phase, "message", message));
         updateNotif();
         stopForeground(true);
         stopSelf();
+    }
+
+    private int armTimeout(String label, long timeoutMs) {
+        if (main == null) return -1;
+        final int seq = ++watchdogSeq;
+        final long safeMs = Math.max(1500, timeoutMs);
+        main.postDelayed(() -> {
+            if (running && watchdogSeq == seq) {
+                stopWithError("Timeout après " + Math.round(safeMs / 1000.0) + " secondes — " + label + ".");
+            }
+        }, safeMs);
+        return seq;
+    }
+
+    private void disarmTimeout(int seq) {
+        if (seq >= 0 && watchdogSeq == seq) watchdogSeq++;
     }
 
     // --- Persistence ---
