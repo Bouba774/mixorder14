@@ -328,27 +328,44 @@ public class DiscDJRobotService extends Service {
         Rect crop = rectFromJson(svc, playlistZone);
         if (crop == null) { backThenRetryOrSkip(attempt, "Zone playlist invalide ou non calibrée."); return; }
         // Capture the full playlist zone, detect the active blue row, OCR that row only.
+        emitLog("info", "Détection de la zone de playlist.");
+        emitLog("info", "Recherche de la ligne active (fond bleu).");
+        final int captureWatchdog = armTimeout("Détection de la ligne active", 10000);
         svc.captureZoneBitmap(crop, discdjPackage, (bitmap, zoneUrl, err) -> {
+            disarmTimeout(captureWatchdog);
             if (bitmap == null) {
                 backThenRetryOrSkip(attempt, "Capture playlist échouée : " + (err != null ? err : "erreur inconnue"));
                 return;
             }
             PlaylistRowDetector.Result det = PlaylistRowDetector.findActiveRow(bitmap);
             if (det.rowRect == null) {
-                stopWithError("Aucune ligne active (fond bleu) trouvée dans la zone playlist — recalibre la zone playlist.");
+                if (attempt + 1 < maxAttempts) {
+                    backThenRetryOrSkip(attempt, "Impossible de détecter la ligne active.");
+                } else {
+                    stopWithError("Impossible de détecter la ligne active — recalibre la zone playlist.");
+                }
                 return;
             }
+            emitLog("success", "Ligne active trouvée.");
             android.graphics.Bitmap rowBmp = android.graphics.Bitmap.createBitmap(
                     bitmap, det.rowRect.left, det.rowRect.top, det.rowRect.width(), det.rowRect.height());
+            emitLog("info", "OCR du nom du morceau.");
+            final int ocrWatchdog = armTimeout("OCR du nom du morceau", 10000);
             svc.ocrBitmapLines(rowBmp, lines -> {
+                disarmTimeout(ocrWatchdog);
                 List<String> candidates = buildNameCandidates(join(lines), lines);
                 Match match = resolveMatch(candidates, tracks.get(index));
+                String ocrPreview = candidates.isEmpty() ? "" : candidates.get(0);
+                if (ocrPreview.isEmpty()) {
+                    backThenRetryOrSkip(attempt, "OCR vide.");
+                    return;
+                }
+                emitLog("success", "Nom détecté : " + ocrPreview + ".");
                 if (match.track != null) {
                     TrackItem t = match.track;
                     lastBpm = bpm;
                     currentName = t.name;
-                    String ocrPreview = candidates.isEmpty() ? "" : candidates.get(0);
-                    emitLog("success", "Morceau " + (index + 1) + "/" + total + " · BPM " + ((int) bpm) + " · « " + ocrPreview + " » → « " + t.name + " »");
+                    emitLog("success", "Association du BPM : " + ((int) bpm) + " → « " + t.name + " ».");
                     try {
                         JSONObject payload = new JSONObject();
                         payload.put("trackId", t.id);
@@ -359,6 +376,7 @@ public class DiscDJRobotService extends Service {
                         emit("discdjBpm", payload);
                     } catch (JSONException ignored) {}
                     saveState(false, t.path);
+                    emitLog("info", "Retour à l'écran principal.");
                     returnToMainThen(ok -> {
                         if (ok) main.postDelayed(this::advance, Math.max(250, waitAfterBackMs));
                         else stopWithError("Retour écran principal non confirmé — analyse arrêtée pour éviter un décalage.");
