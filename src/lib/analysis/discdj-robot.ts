@@ -1651,6 +1651,20 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
+async function withStepTimeout<T>(task: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      task(),
+      new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(`Timeout après ${Math.round(timeoutMs / 1000)} secondes — ${label}.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
+}
+
 /**
  * Background-safe sleep. Delegates to the native plugin when available
  * (Android Handler.postDelayed — NOT throttled when MixOrder is
