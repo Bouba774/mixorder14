@@ -73,7 +73,7 @@ public class DiscDJRobotService extends Service {
     private String analysisMode = "auto-sync";
     private JSONObject playlistButton;
     private JSONObject backButton;
-    private JSONObject nameZone;
+    private JSONObject playlistZone;
     private int waitAfterPlaylistOpenMs = 900;
     private int waitAfterBackMs = 700;
     private int nameMaxOcrRetries = 3;
