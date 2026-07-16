@@ -86,6 +86,22 @@ export interface DiscDJRobotPlugin {
     instructions: string;
   }): Promise<DiscDJCaptureResult>;
   readBpm(options: { deck: DeckId; bpmZone?: DiscDJCalibrationRect | null }): Promise<DiscDJBpmReading>;
+  /**
+   * AutoSync-name: capture the full playlist zone, detect the currently
+   * loaded row by its blue background color, isolate that row and OCR it.
+   */
+  readPlaylistActiveName(options: { deck: DeckId; playlistZone: DiscDJCalibrationRect }): Promise<{
+    name: string | null;
+    raw?: string | null;
+    zoneTexts?: string[];
+    reason?: string | null;
+    zoneImage?: string | null;
+    activeRowImage?: string | null;
+    activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+    sourceOk?: boolean;
+    orientationOk?: boolean;
+    sourcePackage?: string | null;
+  }>;
   tapNext(options: {
     deck: DeckId;
     point?: DiscDJCalibrationPoint | null;
