@@ -703,11 +703,24 @@ export function useDiscDJRobot() {
             //    blue row, and OCR only that row.
             log("info", `${progress} Détection de la zone de playlist.`);
             log("info", `${progress} Recherche de la ligne active (fond bleu).`);
-            const nameRead = await withStepTimeout(
-              () => readActivePlaylistRowOnce(bridge, deck, nameZone!),
-              10_000,
-              "Détection de la ligne active",
-            );
+            let nameRead: Awaited<ReturnType<typeof readActivePlaylistRowOnce>>;
+            try {
+              nameRead = await withStepTimeout(
+                () => readActivePlaylistRowOnce(bridge, deck, nameZone!),
+                10_000,
+                "Détection de la ligne active",
+              );
+            } catch (e) {
+              const msg = `${progress} ${describe(e)}`;
+              log(attempt >= perStepMaxRetries ? "error" : "warning", `${msg}${attempt < perStepMaxRetries ? " Nouvelle tentative." : ""}`);
+              await returnToMainStrict(bridge, deck, backBtn!, settings);
+              if (attempt >= perStepMaxRetries) {
+                setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+                keyAnalysisEngine.setSlowMode(false);
+                return;
+              }
+              continue;
+            }
             const { cleaned, reason } = nameRead;
             lastOcr = cleaned;
             if (reason === "no-active-row") {
