@@ -53,8 +53,8 @@ const TARGETS: Array<{ id: CalibrationTarget; label: string; icon: "point" | "zo
 const AUTOSYNC_TARGETS: Array<{ id: CalibrationTarget; label: string; icon: "point" | "zone"; screen: "main" | "playlist" }> = [
   { id: "playlistButton", label: "Bouton Playlist (écran principal)", icon: "point", screen: "main" },
   { id: "backButton", label: "Bouton Retour (dans la playlist)", icon: "point", screen: "playlist" },
-  { id: "nameZoneDeck1", label: "Zone Nom du morceau · platine 1 (playlist)", icon: "zone", screen: "playlist" },
-  { id: "nameZoneDeck2", label: "Zone Nom du morceau · platine 2 (playlist)", icon: "zone", screen: "playlist" },
+  { id: "playlistZoneDeck1", label: "Zone Nom du morceau · platine 1 (playlist)", icon: "zone", screen: "playlist" },
+  { id: "playlistZoneDeck2", label: "Zone Nom du morceau · platine 2 (playlist)", icon: "zone", screen: "playlist" },
 ];
 
 
@@ -904,7 +904,7 @@ function missingCalibrationForStart(settings: DiscDJRobotSettings, deck: DeckId)
   if (settings.analysisMode === "autosync-name") {
     if (!cal.playlistButton) missing.push("bouton Playlist");
     if (!cal.backButton) missing.push("bouton Retour");
-    if (!(deck === 1 ? cal.nameZoneDeck1 : cal.nameZoneDeck2)) missing.push(`zone Nom du morceau platine ${deck}`);
+    if (!(deck === 1 ? cal.playlistZoneDeck1 : cal.playlistZoneDeck2)) missing.push(`zone Nom du morceau platine ${deck}`);
   }
   return missing;
 }

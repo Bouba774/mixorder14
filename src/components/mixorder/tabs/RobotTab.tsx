@@ -261,8 +261,8 @@ const CALIB_ELEMENTS: CalibElement[] = [
   { id: "bpmDeck2", label: "Zone BPM · platine 2", icon: "zone" },
   { id: "playlistButton", label: "Bouton Playlist", icon: "point", autosyncOnly: true },
   { id: "backButton", label: "Bouton Retour", icon: "point", autosyncOnly: true },
-  { id: "nameZoneDeck1", label: "Zone Nom du morceau · platine 1", icon: "zone", autosyncOnly: true },
-  { id: "nameZoneDeck2", label: "Zone Nom du morceau · platine 2", icon: "zone", autosyncOnly: true },
+  { id: "playlistZoneDeck1", label: "Zone Nom du morceau · platine 1", icon: "zone", autosyncOnly: true },
+  { id: "playlistZoneDeck2", label: "Zone Nom du morceau · platine 2", icon: "zone", autosyncOnly: true },
 ];
 
 function StepCalibration({ robot }: { robot: ReturnType<typeof useDiscDJRobot> }) {
@@ -304,8 +304,8 @@ function StepCalibration({ robot }: { robot: ReturnType<typeof useDiscDJRobot> }
       } else if (id === "backButton") {
         const r = await testBackButton();
         setFeedback({ id, ok: r.ok, text: r.message });
-      } else if (id === "nameZoneDeck1" || id === "nameZoneDeck2") {
-        const deck: DeckId = id === "nameZoneDeck1" ? 1 : 2;
+      } else if (id === "playlistZoneDeck1" || id === "playlistZoneDeck2") {
+        const deck: DeckId = id === "playlistZoneDeck1" ? 1 : 2;
         const r = await testNameZone(deck);
         setFeedback({ id, ok: r.ok, text: `${r.message}${r.cleaned ? ` · « ${r.cleaned} »` : ""}` });
       }

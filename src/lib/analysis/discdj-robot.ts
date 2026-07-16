@@ -517,7 +517,7 @@ export function useDiscDJRobot() {
         bridge.startBackgroundRun
       ) {
         const cal = getDeckCalibration(settings, deck);
-        const nameZone = deck === 1 ? settings.calibration.nameZoneDeck1 : settings.calibration.nameZoneDeck2;
+        const nameZone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
         if (settings.analysisMode === "autosync-name") {
           const missingCal: string[] = [];
           if (!settings.calibration.playlistButton) missingCal.push("bouton Playlist");
@@ -610,7 +610,7 @@ export function useDiscDJRobot() {
       if (settings.analysisMode === "autosync-name") {
         const playlistBtn = settings.calibration.playlistButton;
         const backBtn = settings.calibration.backButton;
-        const nameZone = deck === 1 ? settings.calibration.nameZoneDeck1 : settings.calibration.nameZoneDeck2;
+        const nameZone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
         const missingCal: string[] = [];
         if (!cal.next) missingCal.push(`bouton Next platine ${deck}`);
         if (!cal.bpmZone) missingCal.push(`zone BPM platine ${deck}`);
@@ -1226,7 +1226,7 @@ export function useDiscDJRobot() {
   const testNameZone = useCallback(
     async (deck: DeckId): Promise<{ ok: boolean; raw: string; cleaned: string; message: string }> => {
       const settings = settingsRef.current;
-      const zone = deck === 1 ? settings.calibration.nameZoneDeck1 : settings.calibration.nameZoneDeck2;
+      const zone = deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
       const playlist = settings.calibration.playlistButton;
       const back = settings.calibration.backButton;
       if (!zone) return { ok: false, raw: "", cleaned: "", message: `Zone nom du morceau platine ${deck} non calibrée.` };
