@@ -299,15 +299,23 @@ public class DiscDJRobotService extends Service {
         if (crop == null) { emitLog("error", "Zone BPM invalide."); skipAndAdvance(); return; }
         final Double nodeBpm = nodeBpmForCrop(svc, crop);
         final int attemptFinal = attempt;
+        emitLog("info", "Lecture du BPM.");
+        final int bpmWatchdog = armTimeout("Lecture du BPM", Math.max(8000, waitBeforeReadMs + 5000));
         main.postDelayed(() -> svc.readBpmFromScreenshot(crop, discdjPackage, result -> {
+            disarmTimeout(bpmWatchdog);
             Double parsedBpm = nodeBpm != null ? nodeBpm : result.bpm;
             if (parsedBpm == null) {
                 retryNameCheckedStep(attemptFinal, "BPM illisible : " + result.parseReason);
                 return;
             }
             final double bpm = Math.round(parsedBpm);
+            emitLog("success", "BPM détecté : " + ((int) bpm) + ".");
+            emitLog("info", "Ouverture de la playlist.");
+            final int playlistWatchdog = armTimeout("Ouverture de la playlist", Math.max(7000, waitAfterPlaylistOpenMs + 5000));
             tapPoint(playlistButton, ok -> {
-                if (!ok) { retryNameCheckedStep(attemptFinal, "Clic Playlist refusé."); return; }
+                disarmTimeout(playlistWatchdog);
+                if (!ok) { retryNameCheckedStep(attemptFinal, "Playlist non détectée : clic Playlist refusé."); return; }
+                emitLog("success", "Clic Playlist confirmé.");
                 main.postDelayed(() -> readNameAndMatch(attemptFinal, bpm, 0), Math.max(250, waitAfterPlaylistOpenMs));
             });
         }), Math.max(250, waitBeforeReadMs));
