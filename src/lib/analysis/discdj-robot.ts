@@ -550,7 +550,7 @@ export function useDiscDJRobot() {
             bpmZone: cal.bpmZone,
             playlistButton: settings.analysisMode === "autosync-name" ? settings.calibration.playlistButton : null,
             backButton: settings.analysisMode === "autosync-name" ? settings.calibration.backButton : null,
-            nameZone: settings.analysisMode === "autosync-name" ? nameZone : null,
+            playlistZone: settings.analysisMode === "autosync-name" ? nameZone : null,
             skipAlreadyBpm,
             replaceExisting,
             waitOnOpenMs: settings.waitOnOpenMs,
