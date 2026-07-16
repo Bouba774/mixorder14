@@ -604,7 +604,7 @@ function CalibrationPanel({
             </button>
             {[1, 2].map((d) => {
               const deck = d as DeckId;
-              const key = `nameZone${deck}`;
+              const key = `playlistZone${deck}`;
               return (
                 <button
                   key={key}
@@ -613,14 +613,22 @@ function CalibrationPanel({
                     setTesting(key);
                     const r = await onTestNameZone(deck);
                     setTesting(null);
-                    setAutoSyncTestResult(
-                      `${r.ok ? "✓" : "✗"} Zone Nom P${deck} — ${r.message}`,
-                    );
+                    setAutoSyncTestResult(`${r.ok ? "✓" : "✗"} Zone playlist P${deck} — ${r.message}`);
+                    setPlaylistZoneDiag({
+                      deck,
+                      ok: r.ok,
+                      message: r.message,
+                      cleaned: r.cleaned,
+                      zoneImage: r.zoneImage,
+                      activeRowImage: r.activeRowImage,
+                      activeRowFraction: r.activeRowFraction,
+                      reason: r.reason,
+                    });
                   }}
                   className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-2 text-[10px] font-semibold text-primary-foreground disabled:opacity-50"
                 >
                   {testing === key ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanLine className="h-3 w-3" />}
-                  Test Nom P{deck}
+                  Test playlist P{deck}
                 </button>
               );
             })}
@@ -629,6 +637,9 @@ function CalibrationPanel({
             <div className={`rounded-md px-2 py-1.5 text-[10px] ${autoSyncTestResult.startsWith("✓") ? "bg-primary/10 text-foreground" : "bg-destructive/10 text-destructive"}`}>
               {autoSyncTestResult}
             </div>
+          )}
+          {playlistZoneDiag && (
+            <PlaylistZonePreview diag={playlistZoneDiag} onClose={() => setPlaylistZoneDiag(null)} />
           )}
         </div>
       )}
