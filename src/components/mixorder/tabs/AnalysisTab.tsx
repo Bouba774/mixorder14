@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import {
-  Waves, Check, AlertCircle, Pause, Play, RefreshCw, Zap, Gauge, ListRestart,
+  AudioWaveform, BadgeCheck, CircleAlert, CirclePause, CirclePlay, Repeat, Zap, Gauge, RotateCcw,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { MotionButton } from "../motion-primitives";
 import { PageHeader } from "../PageHeader";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useKeyAnalysisEngine } from "@/hooks/useKeyAnalysisEngine";
@@ -52,7 +54,7 @@ export function AnalysisTab() {
   return (
     <div className="space-y-4">
       <PageHeader
-        icon={Waves}
+        icon={AudioWaveform}
         eyebrow="Analyse"
         title="Détection des tonalités"
         subtitle="Moteur hybride local. Priorité automatique quand le Robot est actif."
@@ -60,7 +62,7 @@ export function AnalysisTab() {
       <div className="rounded-xl border border-border bg-surface p-4">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent/40 text-primary">
-            <Waves className="h-5 w-5" />
+            <AudioWaveform className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-display text-sm font-semibold">Analyse des tonalités</p>
@@ -105,14 +107,14 @@ export function AnalysisTab() {
             onClick={() => keyAnalysisEngine.pause()}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:border-border-strong"
           >
-            <Pause className="h-3.5 w-3.5" /> Suspendre
+            <CirclePause className="h-3.5 w-3.5" /> Suspendre
           </button>
         ) : (
           <button
             onClick={() => (engine.paused ? keyAnalysisEngine.resume() : keyAnalysisEngine.start())}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground"
           >
-            <Play className="h-3.5 w-3.5" /> {engine.paused ? "Reprendre" : "Démarrer"}
+            <CirclePlay className="h-3.5 w-3.5" /> {engine.paused ? "Reprendre" : "Démarrer"}
           </button>
         )}
         <button
@@ -120,7 +122,7 @@ export function AnalysisTab() {
           disabled={engine.errors === 0}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <RefreshCw className="h-3.5 w-3.5" /> Réanalyser erreurs
+          <Repeat className="h-3.5 w-3.5" /> Réanalyser erreurs
         </button>
         <button
           onClick={() => {
@@ -131,7 +133,7 @@ export function AnalysisTab() {
           }}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:border-border-strong"
         >
-          <ListRestart className="h-3.5 w-3.5" /> Tout réanalyser
+          <RotateCcw className="h-3.5 w-3.5" /> Tout réanalyser
         </button>
       </div>
 
@@ -209,6 +211,6 @@ function StatusDot({ trackId, hasKey }: { trackId: string; hasKey: boolean }) {
   const isCurrent = current && engine.log[0]?.message.startsWith(current);
   // Fallback: highlight the current-name row.
   void isCurrent; void trackId;
-  if (hasKey) return <Check className="h-3.5 w-3.5 text-primary" />;
-  return <AlertCircle className="h-3.5 w-3.5 text-muted-foreground/50" />;
+  if (hasKey) return <BadgeCheck className="h-3.5 w-3.5 text-primary" />;
+  return <CircleAlert className="h-3.5 w-3.5 text-muted-foreground/50" />;
 }

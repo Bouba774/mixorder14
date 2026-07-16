@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  FolderOpen,
-  RefreshCw,
-  Library,
-  Bot,
-  ListMusic,
-  Copy,
-  Pencil,
-  Music2,
-  KeyRound,
-  Clock3,
-  Activity,
-  Lightbulb,
-  PlayCircle,
-  ArrowRight,
-  Sparkles,
-  CheckCircle2,
-  Waves,
+  FolderKanban,
+  Repeat,
+  LibraryBig,
+  BotMessageSquare,
+  Blocks,
+  CopyCheck,
+  SquarePen,
+  AudioLines,
+  Diamond,
+  TimerReset,
+  Radar,
+  Wand2,
+  CirclePlay,
+  MoveUpRight,
+  Sparkle,
+  BadgeCheck,
+  AudioWaveform,
 } from "lucide-react";
+import { motion } from "framer-motion";
+import { MotionButton } from "../motion-primitives";
 import { formatDuration, useWorkspace } from "@/lib/workspace-context";
 import { useSetBuilder } from "@/lib/setbuilder/context";
 import { useDuplicates } from "@/hooks/useDuplicates";
@@ -93,7 +95,7 @@ export function HomeTab({ onNavigate, onChangeLibrary }: HomeTabProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
-              <FolderOpen className="h-5 w-5" />
+              <FolderKanban className="h-5 w-5" />
             </div>
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -109,7 +111,7 @@ export function HomeTab({ onNavigate, onChangeLibrary }: HomeTabProps) {
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
             aria-label="Changer de bibliothèque"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <Repeat className="h-3.5 w-3.5" />
             Changer
           </button>
         </div>
@@ -136,38 +138,38 @@ export function HomeTab({ onNavigate, onChangeLibrary }: HomeTabProps) {
         style={{ animationDelay: "80ms" }}
       >
         <SectionHeader
-          icon={Sparkles}
+          icon={Sparkle}
           title="Actions rapides"
           subtitle="Sauter directement dans un module"
         />
         <div className="grid grid-cols-2 gap-3">
           <ActionCard
-            icon={Library}
+            icon={LibraryBig}
             label="Bibliothèque"
             desc="Trier, rechercher, écouter"
             onClick={() => onNavigate("library")}
           />
           <ActionCard
-            icon={Bot}
+            icon={BotMessageSquare}
             label="Robot DiscDJ"
             desc="Détection BPM automatisée"
             accent
             onClick={() => onNavigate("robot")}
           />
           <ActionCard
-            icon={ListMusic}
+            icon={Blocks}
             label="AutoMix"
             desc="Playlist automatique"
             onClick={() => onNavigate("setbuilder")}
           />
           <ActionCard
-            icon={Copy}
+            icon={CopyCheck}
             label="Doublons"
             desc="Nettoyer la bibliothèque"
             onClick={() => onNavigate("duplicates")}
           />
           <ActionCard
-            icon={Pencil}
+            icon={SquarePen}
             label="Renommage"
             desc="Templates batch + Undo"
             onClick={() => onNavigate("rename")}
@@ -182,27 +184,27 @@ export function HomeTab({ onNavigate, onChangeLibrary }: HomeTabProps) {
         style={{ animationDelay: "140ms" }}
       >
         <SectionHeader
-          icon={Waves}
+          icon={AudioWaveform}
           title="Progression de la bibliothèque"
           subtitle="Ce qu'il reste à analyser"
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <ProgressCard
-            icon={Music2}
+            icon={AudioLines}
             label="BPM détectés"
             done={withBpm}
             total={tracks.length}
             tone="primary"
           />
           <ProgressCard
-            icon={KeyRound}
+            icon={Diamond}
             label="Tonalités détectées"
             done={withKey}
             total={tracks.length}
             tone="action"
           />
           <ProgressCard
-            icon={Copy}
+            icon={CopyCheck}
             label="Doublons trouvés"
             done={dupCount}
             total={tracks.length}
@@ -210,7 +212,7 @@ export function HomeTab({ onNavigate, onChangeLibrary }: HomeTabProps) {
             invertMeaning
           />
           <ProgressCard
-            icon={Clock3}
+            icon={TimerReset}
             label="Restants à analyser"
             done={pendingBpm}
             total={tracks.length}
@@ -226,7 +228,7 @@ export function HomeTab({ onNavigate, onChangeLibrary }: HomeTabProps) {
         style={{ animationDelay: "200ms" }}
       >
         <SectionHeader
-          icon={Activity}
+          icon={Radar}
           title="Activité récente"
           subtitle="Où vous vous êtes arrêté"
         />
@@ -265,7 +267,7 @@ function SectionHeader({
   title,
   subtitle,
 }: {
-  icon: typeof Library;
+  icon: typeof LibraryBig;
   title: string;
   subtitle: string;
 }) {
@@ -301,7 +303,7 @@ function ActionCard({
   accent,
   className,
 }: {
-  icon: typeof Library;
+  icon: typeof LibraryBig;
   label: string;
   desc: string;
   onClick: () => void;
@@ -309,27 +311,35 @@ function ActionCard({
   className?: string;
 }) {
   return (
-    <button
+    <MotionButton
       onClick={onClick}
-      className={`group relative overflow-hidden rounded-2xl border p-4 text-left transition-all active:scale-[0.98] ${
+      whileHover={{ y: -3, scale: 1.02 }}
+      whileTap={{ scale: 0.97 }}
+      className={`group relative overflow-hidden rounded-2xl border p-4 text-left ${
         accent
           ? "border-primary/40 bg-gradient-to-br from-primary/15 via-card to-card shadow-md hover:shadow-glow"
           : "border-border bg-card hover:border-border-strong hover:bg-surface-elevated"
       } ${className ?? ""}`}
     >
+      <motion.span
+        aria-hidden
+        className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-primary/20 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"
+      />
       <div className="flex items-center justify-between">
-        <div
+        <motion.div
+          whileHover={{ rotate: -6, scale: 1.08 }}
+          transition={{ type: "spring", stiffness: 300, damping: 15 }}
           className={`grid h-10 w-10 place-items-center rounded-xl ${
             accent ? "bg-primary/20 text-primary" : "bg-surface-elevated text-foreground"
           }`}
         >
-          <Icon className="h-5 w-5" />
-        </div>
-        <ArrowRight className="h-4 w-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+          <Icon className="h-5 w-5" strokeWidth={1.75} />
+        </motion.div>
+        <MoveUpRight className="h-4 w-4 text-muted-foreground/50 transition-all group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:text-primary" strokeWidth={2} />
       </div>
       <p className="mt-3 font-display text-sm font-semibold">{label}</p>
       <p className="mt-0.5 text-[11px] text-muted-foreground">{desc}</p>
-    </button>
+    </MotionButton>
   );
 }
 
@@ -341,7 +351,7 @@ function ProgressCard({
   tone,
   invertMeaning,
 }: {
-  icon: typeof Library;
+  icon: typeof LibraryBig;
   label: string;
   done: number;
   total: number;
@@ -366,11 +376,18 @@ function ProgressCard({
           ? "text-bronze"
           : "text-muted-foreground";
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px" }}
+      whileHover={{ y: -2, borderColor: "var(--border-strong)" }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className={`grid h-8 w-8 place-items-center rounded-lg bg-surface-elevated ${iconTone}`}>
-            <Icon className="h-4 w-4" />
+            <Icon className="h-4 w-4" strokeWidth={1.75} />
           </div>
           <p className="text-xs font-medium text-foreground">{label}</p>
         </div>
@@ -380,15 +397,18 @@ function ProgressCard({
         </p>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface">
-        <div
-          className={`h-full rounded-full ${barColor} transition-all duration-700`}
-          style={{ width: `${invertMeaning ? Math.min(pct, 100) : pct}%` }}
+        <motion.div
+          initial={{ width: 0 }}
+          whileInView={{ width: `${invertMeaning ? Math.min(pct, 100) : pct}%` }}
+          viewport={{ once: true }}
+          transition={{ duration: 1, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+          className={`h-full rounded-full ${barColor}`}
         />
       </div>
       <p className="mt-1.5 text-right text-[10px] text-muted-foreground tabular-nums">
         {pct}%
       </p>
-    </div>
+    </motion.div>
   );
 }
 
@@ -396,7 +416,7 @@ function ProgressCard({
 
 type ActivityItem = {
   ts: number;
-  icon: typeof Library;
+  icon: typeof LibraryBig;
   label: string;
   desc: string;
   tone: "primary" | "action" | "bronze" | "success" | "muted";
@@ -416,7 +436,7 @@ function RecentActivity({
   const items: ActivityItem[] = [];
   items.push({
     ts: projectCreatedAt,
-    icon: FolderOpen,
+    icon: FolderKanban,
     label: "Bibliothèque importée",
     desc: "Import initial du dossier",
     tone: "primary",
@@ -424,7 +444,7 @@ function RecentActivity({
   for (const j of journal.slice(0, 6)) {
     items.push({
       ts: j.ts,
-      icon: Bot,
+      icon: BotMessageSquare,
       label: `Robot · ${j.name}`,
       desc:
         j.outcome === "success" && j.bpm != null
@@ -440,7 +460,7 @@ function RecentActivity({
   for (const b of renameBatches.slice(0, 3)) {
     items.push({
       ts: b.at,
-      icon: Pencil,
+      icon: SquarePen,
       label: `Renommage · ${b.count} pistes`,
       desc: b.reverted ? "Annulé" : `Modèle : ${b.template}`,
       tone: "action",
@@ -449,7 +469,7 @@ function RecentActivity({
   for (const s of sets.slice(0, 3)) {
     items.push({
       ts: s.updatedAt,
-      icon: ListMusic,
+      icon: Blocks,
       label: `Set · ${s.name}`,
       desc: `${s.paths.length} pistes`,
       tone: "primary",
@@ -535,7 +555,7 @@ function ResumeSection({
     tab: TabId;
     title: string;
     desc: string;
-    icon: typeof Library;
+    icon: typeof LibraryBig;
   } | null = null;
 
   if (pendingBpm > 0) {
@@ -543,14 +563,14 @@ function ResumeSection({
       tab: "robot",
       title: "Reprendre l'analyse BPM",
       desc: `${pendingBpm} morceau${pendingBpm > 1 ? "x" : ""} sans BPM détecté`,
-      icon: Bot,
+      icon: BotMessageSquare,
     };
   } else if (activeSetName) {
     target = {
       tab: "setbuilder",
       title: "Reprendre l'AutoMix",
       desc: "Ta playlist en cours",
-      icon: ListMusic,
+      icon: Blocks,
     };
   } else {
     const last = renameBatches[0];
@@ -559,7 +579,7 @@ function ResumeSection({
         tab: "rename",
         title: "Revoir le dernier renommage",
         desc: `${last.count} pistes · ${last.template}`,
-        icon: Pencil,
+        icon: SquarePen,
       };
     }
   }
@@ -572,23 +592,36 @@ function ResumeSection({
       style={{ animationDelay: "260ms" }}
     >
       <SectionHeader
-        icon={PlayCircle}
+        icon={CirclePlay}
         title="Reprendre le travail"
         subtitle="Là où vous vous êtes arrêté"
       />
-      <button
+      <MotionButton
         onClick={() => onNavigate(target!.tab)}
-        className="group flex w-full items-center gap-3 rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card p-4 text-left shadow-md transition-all active:scale-[0.99] hover:shadow-glow"
+        whileHover={{ y: -3, scale: 1.01 }}
+        whileTap={{ scale: 0.98 }}
+        className="group relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card p-4 text-left shadow-md hover:shadow-glow"
       >
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/20 text-primary">
-          <target.icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute -left-16 top-0 h-full w-32 -skew-x-12 bg-gradient-to-r from-transparent via-primary/25 to-transparent"
+          initial={{ x: "-100%" }}
+          whileHover={{ x: "400%" }}
+          transition={{ duration: 1.1, ease: "easeInOut" }}
+        />
+        <motion.div
+          animate={{ scale: [1, 1.06, 1] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+          className="relative grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/20 text-primary"
+        >
+          <target.icon className="h-5 w-5" strokeWidth={1.75} />
+        </motion.div>
+        <div className="relative min-w-0 flex-1">
           <p className="truncate font-display text-sm font-semibold">{target.title}</p>
           <p className="truncate text-[11px] text-muted-foreground">{target.desc}</p>
         </div>
-        <ArrowRight className="h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5" />
-      </button>
+        <MoveUpRight className="relative h-4 w-4 text-primary transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" strokeWidth={2} />
+      </MotionButton>
     </section>
   );
 }
@@ -609,32 +642,32 @@ function SmartTips({
   onNavigate: (t: TabId) => void;
 }) {
   const tips: Array<{
-    icon: typeof Library;
+    icon: typeof LibraryBig;
     text: string;
     action: { label: string; tab: TabId };
   }> = [];
 
   if (pendingBpm > 0)
     tips.push({
-      icon: Music2,
+      icon: AudioLines,
       text: `Il reste ${pendingBpm} morceau${pendingBpm > 1 ? "x" : ""} sans BPM.`,
       action: { label: "Lancer le robot", tab: "robot" },
     });
   if (pendingKey > 0 && pendingKey !== pendingBpm)
     tips.push({
-      icon: KeyRound,
+      icon: Diamond,
       text: `${pendingKey} morceau${pendingKey > 1 ? "x sont" : " est"} sans tonalité.`,
       action: { label: "Analyser", tab: "analysis" },
     });
   if (dupCount > 0)
     tips.push({
-      icon: Copy,
+      icon: CopyCheck,
       text: `${dupCount} doublon${dupCount > 1 ? "s ont" : " a"} été détecté${dupCount > 1 ? "s" : ""}.`,
       action: { label: "Nettoyer", tab: "duplicates" },
     });
   if (setsCount === 0)
     tips.push({
-      icon: ListMusic,
+      icon: Blocks,
       text: "Aucun AutoMix généré pour l'instant.",
       action: { label: "Lancer AutoMix", tab: "setbuilder" },
     });
@@ -646,12 +679,12 @@ function SmartTips({
         style={{ animationDelay: "320ms" }}
       >
         <SectionHeader
-          icon={Lightbulb}
+          icon={Wand2}
           title="Conseils intelligents"
           subtitle="Recommandations personnalisées"
         />
         <div className="flex items-center gap-3 rounded-2xl border border-success/30 bg-success/10 p-4">
-          <CheckCircle2 className="h-5 w-5 text-success" />
+          <BadgeCheck className="h-5 w-5 text-success" />
           <p className="text-xs text-foreground">
             Ta bibliothèque est à jour. Rien à signaler.
           </p>
@@ -666,7 +699,7 @@ function SmartTips({
       style={{ animationDelay: "320ms" }}
     >
       <SectionHeader
-        icon={Lightbulb}
+        icon={Wand2}
         title="Conseils intelligents"
         subtitle="Recommandations personnalisées"
       />
