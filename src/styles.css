@@ -4,36 +4,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * Design system definition.
- *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
- *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
- */
-
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-glow: var(--primary-glow);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -42,94 +30,179 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-action: var(--action);
+  --color-action-foreground: var(--action-foreground);
+  --color-bronze: var(--bronze);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-ring-offset-background: var(--background);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: "General Sans", "Inter", "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Clash Display", "Sora", "SF Pro Display", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.35);
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.35);
+  --shadow-md: 0 4px 14px -6px oklch(0 0 0 / 0.45);
+  --shadow-lg: 0 12px 28px -12px oklch(0 0 0 / 0.55);
+  --shadow-glow: 0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent);
+  --shadow-elevated: 0 16px 40px -20px oklch(0 0 0 / 0.6);
 }
 
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
-}
-
+/* =========================================================
+   DARK THEME (default) — Studio Noir (official MixOrder palette)
+   ========================================================= */
+:root,
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --radius: 0.875rem;
+
+  /* Studio Noir — sober blacks with a single precise green accent */
+  --background: #0F0F0F;
+  --foreground: #F8F8F8;
+
+  --surface: #202020;
+  --surface-elevated: #2A2A2A;
+
+  --card: #202020;
+  --card-foreground: #F8F8F8;
+
+  --popover: #202020;
+  --popover-foreground: #F8F8F8;
+
+  --primary: #5DD62C;
+  --primary-foreground: #0A1A03;
+  --primary-glow: #5DD62C;
+
+  --bronze: #337418;
+
+  --secondary: #202020;
+  --secondary-foreground: #F8F8F8;
+
+  --muted: #181818;
+  --muted-foreground: #A1A1A1;
+
+  --accent: #5DD62C;
+  --accent-foreground: #0A1A03;
+
+  --action: #5DD62C;
+  --action-foreground: #0A1A03;
+
+  --success: #5DD62C;
+  --success-foreground: #0A1A03;
+
+  --destructive: #E5484D;
+  --destructive-foreground: #FFFFFF;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: color-mix(in oklab, #5DD62C 55%, transparent);
+
+  --gradient-primary: linear-gradient(135deg, #5DD62C 0%, #337418 100%);
+  --gradient-bronze: linear-gradient(135deg, #337418, #5DD62C);
+  --gradient-surface: linear-gradient(180deg, #202020 0%, #0F0F0F 100%);
+  --gradient-radial-gold: radial-gradient(circle at 50% 0%, color-mix(in oklab, #5DD62C 12%, transparent), transparent 60%);
+
+  color-scheme: dark;
+}
+
+/* =========================================================
+   LIGHT THEME — Same identity, inverted surfaces
+   ========================================================= */
+.light {
+  --radius: 0.875rem;
+
+  --background: #F7F7F7;
+  --foreground: #0F0F0F;
+
+  --surface: #FFFFFF;
+  --surface-elevated: #F0F0F0;
+
+  --card: #FFFFFF;
+  --card-foreground: #0F0F0F;
+
+  --popover: #FFFFFF;
+  --popover-foreground: #0F0F0F;
+
+  --primary: #337418;
+  --primary-foreground: #FFFFFF;
+  --primary-glow: #5DD62C;
+
+  --bronze: #337418;
+
+  --secondary: #EAEAEA;
+  --secondary-foreground: #0F0F0F;
+
+  --muted: #F0F0F0;
+  --muted-foreground: #5A5A5A;
+
+  --accent: #337418;
+  --accent-foreground: #FFFFFF;
+
+  --action: #337418;
+  --action-foreground: #FFFFFF;
+
+  --success: #337418;
+  --success-foreground: #FFFFFF;
+
+  --destructive: #E5484D;
+  --destructive-foreground: #FFFFFF;
+
+  --border: rgba(15, 15, 15, 0.10);
+  --border-strong: rgba(15, 15, 15, 0.20);
+  --input: rgba(15, 15, 15, 0.12);
+  --ring: color-mix(in oklab, #337418 55%, transparent);
+
+  --gradient-primary: linear-gradient(135deg, #337418 0%, #5DD62C 100%);
+  --gradient-bronze: linear-gradient(135deg, #337418, #5DD62C);
+  --gradient-surface: linear-gradient(180deg, #FFFFFF, #F7F7F7);
+  --gradient-radial-gold: radial-gradient(circle at 50% 0%, color-mix(in oklab, #337418 8%, transparent), transparent 60%);
+
+  color-scheme: light;
+}
+
+html {
+  /* Slightly tighter base scale for TempoKey-like density.
+     1rem = 15px instead of 16px, propagates across all Tailwind text-* utilities. */
+  font-size: 93.75%;
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
+}
+
+body {
+  min-height: 100vh;
+  overscroll-behavior-y: none;
+}
+
+/* =========================================================
+   Edge-to-edge Android: safe-area utilities
+   The WebView draws behind the status bar and gesture bar
+   (overlaysWebView: true). Any top toolbar / sticky header
+   should get pt-safe so its content clears the status bar,
+   while its background paints behind it. Bottom-fixed UI
+   (MiniPlayer, BottomNav) uses pb-safe.
+   ========================================================= */
+@utility pt-safe {
+  padding-top: calc(env(safe-area-inset-top) + var(--pt-safe-extra, 0px));
+}
+@utility pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + var(--pb-safe-extra, 0px));
+}
+@utility top-safe {
+  top: env(safe-area-inset-top);
 }
 
 @layer base {
@@ -137,8 +210,177 @@
     border-color: var(--color-border);
   }
 
-  body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  small {
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+  }
+
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 40%, transparent);
+    color: var(--foreground);
+  }
+}
+
+@utility text-gradient-gold {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-gradient-gold {
+  background: var(--gradient-primary);
+}
+
+@utility bg-gradient-bronze {
+  background: var(--gradient-bronze);
+}
+
+@utility bg-gradient-surface {
+  background: var(--gradient-surface);
+}
+
+@utility shadow-gold {
+  box-shadow: var(--shadow-glow);
+}
+
+@utility shadow-card {
+  box-shadow: var(--shadow-sm);
+}
+
+@utility shadow-card-lg {
+  box-shadow: var(--shadow-md);
+}
+
+@utility glass {
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border);
+}
+
+@utility ring-focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+}
+
+/* ========== Animations ========== */
+@keyframes ambient-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.05); }
+}
+@utility animate-ambient {
+  animation: ambient-pulse 6s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@utility animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@utility animate-fade-in {
+  animation: fade-in 0.35s ease-out both;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@utility animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--muted) 90%, transparent) 0%,
+    color-mix(in oklab, var(--surface-elevated) 100%, transparent) 50%,
+    color-mix(in oklab, var(--muted) 90%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* List item lifecycle animations — enter / exit / stagger. */
+@keyframes list-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+@utility animate-list-enter {
+  animation: list-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes list-exit {
+  from { opacity: 1; transform: translateX(0)    scale(1); max-height: 200px; }
+  to   { opacity: 0; transform: translateX(-24px) scale(0.96); max-height: 0; margin: 0; padding-top: 0; padding-bottom: 0; }
+}
+@utility animate-list-exit {
+  animation: list-exit 0.28s cubic-bezier(0.55, 0, 0.55, 1) both;
+  overflow: hidden;
+}
+
+@keyframes pop-in {
+  0%   { opacity: 0; transform: scale(0.9); }
+  60%  { opacity: 1; transform: scale(1.03); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@utility animate-pop-in {
+  animation: pop-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Staggered entrance — apply on the child while parent tracks index via style var --i. */
+@utility stagger-item {
+  animation: list-enter 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+/* Skeleton loader — smoother than default shimmer, respects surface color. */
+@utility skeleton {
+  position: relative;
+  background: color-mix(in oklab, var(--surface-elevated) 100%, transparent);
+  overflow: hidden;
+  border-radius: 0.75rem;
+}
+@keyframes skeleton-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--primary) 8%, transparent) 50%,
+    transparent 100%
+  );
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+/* Reduce motion — the OS override wins over premium animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

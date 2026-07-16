@@ -11,22 +11,25 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import logo from "../assets/mixorder-logo.asset.json";
+import { ThemeProvider } from "../lib/theme/theme-provider";
+import { configureSystemUI } from "../lib/native/system-ui";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">Page introuvable</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          Cette page n'existe pas ou a été déplacée.
         </p>
         <div className="mt-6">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go home
+            Retour à l'accueil
           </Link>
         </div>
       </div>
@@ -42,13 +45,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+          Un problème est survenu
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          MixOrder n'a pas pu charger cet écran. Réessayez ou revenez à l'accueil — vos données restent intactes.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -56,15 +59,15 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            Réessayer
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go home
+            Accueil
           </a>
         </div>
       </div>
@@ -72,26 +75,48 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      {
+        name: "viewport",
+        content:
+          "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1",
+      },
+      { name: "theme-color", content: "#0F0F0F" },
+      { title: "MixOrder" },
+      {
+        name: "description",
+        content:
+          "Mix your music DiscDJ robot",
+      },
+      { property: "og:title", content: "MixOrder" },
+      {
+        property: "og:description",
+        content:
+          "Mix your music DiscDJ robot",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "MixOrder" },
+      { name: "twitter:description", content: "Mix your music DiscDJ robot" },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/412ad346-002d-4215-b4c3-ebf0159160a8/id-preview-5a33a3bd--81d2570c-26c3-4ec4-bfe8-b05dd6b96243.lovable.app-1783774080022.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/412ad346-002d-4215-b4c3-ebf0159160a8/id-preview-5a33a3bd--81d2570c-26c3-4ec4-bfe8-b05dd6b96243.lovable.app-1783774080022.png" },
     ],
     links: [
+      { rel: "preconnect", href: "https://api.fontshare.com" },
+      { rel: "preconnect", href: "https://cdn.fontshare.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: appCss,
+        href: "https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=general-sans@400,500,600&display=swap",
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/png", href: "/__l5e/assets-v1/59a9391b-aced-42e1-84bc-cdedeb81738d/mixorder-logo.png" },
+      { rel: "shortcut icon", type: "image/png", href: "/__l5e/assets-v1/59a9391b-aced-42e1-84bc-cdedeb81738d/mixorder-logo.png" },
+      { rel: "apple-touch-icon", href: logo.url },
     ],
   }),
   shellComponent: RootShell,
@@ -102,9 +127,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="fr" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('mixorder.theme');var m=(t==='light'||t==='dark')?t:(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',m==='dark');document.documentElement.classList.toggle('light',m==='light');}catch(e){}`,
+          }}
+        />
       </head>
       <body>
         {children}
@@ -117,10 +147,16 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  useEffect(() => {
+    void configureSystemUI();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <ThemeProvider defaultTheme="system">
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

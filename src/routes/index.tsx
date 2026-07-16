@@ -1,24 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { WorkspaceProvider, useWorkspace } from "@/lib/workspace-context";
+import { LibraryViewProvider } from "@/lib/library/view-context";
+import { SetBuilderProvider } from "@/lib/setbuilder/context";
+import { PlayerProvider } from "@/lib/player/player-context";
+import { SettingsProvider } from "@/lib/settings/settings-context";
+import { WelcomeScreen } from "@/components/mixorder/WelcomeScreen";
+import { Workspace } from "@/components/mixorder/Workspace";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+function AppShell() {
+  const { project } = useWorkspace();
+  return project ? <Workspace /> : <WelcomeScreen />;
+}
+
 function Index() {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <WorkspaceProvider>
+      <LibraryViewProvider>
+        <SetBuilderProvider>
+          <PlayerProvider>
+            <SettingsProvider>
+              <AppShell />
+            </SettingsProvider>
+          </PlayerProvider>
+        </SetBuilderProvider>
+      </LibraryViewProvider>
+    </WorkspaceProvider>
   );
 }
+
+
