@@ -47,8 +47,6 @@ export function AnalysisTab() {
     };
   }, [project]);
 
-  if (!project) return null;
-
   const pct = stats.total === 0 ? 0 : Math.round((stats.withKey / stats.total) * 100);
   const speed = engine.avgMsPerTrack > 0
     ? `${(60000 / engine.avgMsPerTrack).toFixed(1)}/min`
@@ -58,6 +56,8 @@ export function AnalysisTab() {
   useEffect(() => {
     if (robotLogRef.current) robotLogRef.current.scrollTop = 0;
   }, [robotEntries.length]);
+
+  if (!project) return null;
 
   return (
     <div className="space-y-4">
