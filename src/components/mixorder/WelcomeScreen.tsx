@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  FolderOpen,
   Loader2,
-  ArrowRight,
-  Bot,
+  MoveUpRight,
+  BotMessageSquare,
   FolderSearch,
   Wand2,
-  ListMusic,
+  Blocks,
   ChevronRight,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Logo } from "./Logo";
+import { MotionButton } from "./motion-primitives";
 import { useWorkspace } from "@/lib/workspace-context";
 import { isNativePlatform, pickFolderNative } from "@/lib/folder-import";
 
@@ -108,18 +109,27 @@ export function WelcomeScreen() {
         </div>
 
         {/* Primary action */}
-        <button
+        <MotionButton
           onClick={handlePick}
           disabled={picking}
-          className="mt-8 inline-flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-gold transition-transform active:scale-[0.98] disabled:opacity-60"
+          whileHover={{ y: -3, scale: 1.015, boxShadow: "0 20px 40px -12px rgba(93,214,44,0.45)" }}
+          whileTap={{ scale: 0.97 }}
+          className="group relative mt-8 inline-flex h-14 w-full items-center justify-center gap-2.5 overflow-hidden rounded-2xl bg-primary px-6 text-[15px] font-semibold text-primary-foreground shadow-gold disabled:opacity-60"
         >
+          <motion.span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent"
+            initial={{ x: "-100%" }}
+            animate={{ x: ["-100%", "200%"] }}
+            transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 1.6, ease: "easeInOut" }}
+          />
           {picking ? (
-            <Loader2 className="h-[18px] w-[18px] animate-spin" />
+            <Loader2 className="relative h-[18px] w-[18px] animate-spin" />
           ) : (
-            <FolderSearch className="h-[18px] w-[18px]" strokeWidth={2.25} />
+            <FolderSearch className="relative h-[18px] w-[18px]" strokeWidth={2.25} />
           )}
-          Sélectionner un dossier à analyser
-        </button>
+          <span className="relative">Sélectionner un dossier à analyser</span>
+        </MotionButton>
 
         {!native && (
           <input
@@ -146,7 +156,7 @@ export function WelcomeScreen() {
             className="mt-4 flex w-full items-center gap-4 rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-border-strong active:scale-[0.99] disabled:opacity-60"
           >
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary">
-              <ListMusic className="h-6 w-6" strokeWidth={2} />
+              <Blocks className="h-6 w-6" strokeWidth={2} />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[10.5px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -162,7 +172,7 @@ export function WelcomeScreen() {
             {reopening ? (
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
             ) : (
-              <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <MoveUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
           </button>
         )}
@@ -170,7 +180,7 @@ export function WelcomeScreen() {
         {/* DiscDJ Robot — exclusive highlight (single subtle line, not a big card) */}
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/[0.06] px-4 py-3">
           <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-            <Bot className="h-4 w-4" strokeWidth={2.25} />
+            <BotMessageSquare className="h-4 w-4" strokeWidth={2.25} />
           </div>
           <div className="min-w-0">
             <p className="text-[12.5px] font-semibold text-foreground">
@@ -205,7 +215,7 @@ export function WelcomeScreen() {
             <WorkflowConnector />
             <WorkflowStep
               index={3}
-              icon={ListMusic}
+              icon={Blocks}
               title="Organisation du mix"
               desc="AutoMix, Harmonic Mixing, doublons et renommage intelligent."
             />

@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  Library as LibraryIcon,
-  Settings as SettingsIcon,
+  LibraryBig as LibraryIcon,
+  Settings2 as SettingsIcon,
   FolderInput,
-  CheckCircle2,
+  BadgeCheck,
   Loader2,
   ArrowLeft,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useWorkspace } from "@/lib/workspace-context";
 import { LibraryTab } from "./tabs/LibraryTab";
 import { RobotTab } from "./tabs/RobotTab";
@@ -131,17 +132,22 @@ export function Workspace() {
       {!isSettings && (
         <>
           {/* ─── Active library card — scrolls away with page ─── */}
-          <section
+          <motion.section
             aria-label="Bibliothèque active"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             className="mx-4 mb-4 mt-1 rounded-2xl border border-border bg-surface p-4 shadow-card"
           >
             <div className="flex items-center gap-3.5">
-              <div
+              <motion.div
+                whileHover={{ rotate: -6, scale: 1.06 }}
+                transition={{ type: "spring", stiffness: 300, damping: 15 }}
                 className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-primary-foreground shadow-gold"
                 style={{ background: "var(--gradient-primary)" }}
               >
                 <LibraryIcon className="h-6 w-6" strokeWidth={2.25} />
-              </div>
+              </motion.div>
               <div className="min-w-0 flex-1 space-y-1">
                 <h1 className="truncate font-display text-[17px] font-bold leading-tight text-foreground">
                   {project.name || "Sans nom"}
@@ -155,7 +161,7 @@ export function Workspace() {
                   }`}
                 >
                   {analysisDone ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <BadgeCheck className="h-3.5 w-3.5" />
                   ) : (
                     <Loader2 className={total === 0 ? "h-3.5 w-3.5" : "h-3.5 w-3.5 animate-spin"} />
                   )}
@@ -165,16 +171,18 @@ export function Workspace() {
                   Importée {formatImportedRelative(project.createdAt)}
                 </div>
               </div>
-              <button
+              <motion.button
                 type="button"
                 onClick={closeProject}
+                whileHover={{ scale: 1.08, rotate: -8 }}
+                whileTap={{ scale: 0.92 }}
                 aria-label="Changer de bibliothèque"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border bg-surface-elevated text-muted-foreground transition-colors hover:text-foreground hover:border-border-strong active:scale-95"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border bg-surface-elevated text-muted-foreground hover:text-primary hover:border-primary/40"
               >
                 <FolderInput className="h-4 w-4" />
-              </button>
+              </motion.button>
             </div>
-          </section>
+          </motion.section>
 
           {/* ─── Sticky tab strip (pins under header when scrolling) ─── */}
           <div
@@ -266,10 +274,11 @@ function TabStrip({
               </button>
             );
           })}
-          <span
+          <motion.span
             aria-hidden
-            className="pointer-events-none absolute bottom-0 h-[3px] rounded-full bg-primary shadow-[0_0_10px_var(--primary-glow)] transition-[left,width] duration-300 ease-out"
-            style={{ left: indicator.left, width: indicator.width }}
+            className="pointer-events-none absolute bottom-0 h-[3px] rounded-full bg-primary shadow-[0_0_12px_var(--primary-glow)]"
+            animate={{ left: indicator.left, width: indicator.width }}
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
           />
         </div>
       </div>

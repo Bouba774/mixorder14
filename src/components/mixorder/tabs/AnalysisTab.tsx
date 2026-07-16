@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import {
-  Waves, Check, AlertCircle, Pause, Play, RefreshCw, Zap, Gauge, ListRestart,
+  AudioWaveform, BadgeCheck, CircleAlert, CirclePause, CirclePlay, Repeat, Zap, Gauge, RotateCcw,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { MotionButton } from "../motion-primitives";
 import { PageHeader } from "../PageHeader";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useKeyAnalysisEngine } from "@/hooks/useKeyAnalysisEngine";
@@ -52,16 +54,36 @@ export function AnalysisTab() {
   return (
     <div className="space-y-4">
       <PageHeader
-        icon={Waves}
+        icon={AudioWaveform}
         eyebrow="Analyse"
         title="Détection des tonalités"
         subtitle="Moteur hybride local. Priorité automatique quand le Robot est actif."
       />
-      <div className="rounded-xl border border-border bg-surface p-4">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent/40 text-primary">
-            <Waves className="h-5 w-5" />
-          </div>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="relative overflow-hidden rounded-xl border border-border bg-surface p-4"
+      >
+        {/* Animated waveform bars in the background */}
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 right-4 flex items-center gap-[3px] opacity-30">
+          {Array.from({ length: 14 }).map((_, i) => (
+            <motion.span
+              key={i}
+              className="block w-[3px] rounded-full bg-primary"
+              animate={{ height: [6, 22, 10, 26, 8], opacity: [0.4, 1, 0.6, 1, 0.4] }}
+              transition={{ duration: 1.4 + (i % 4) * 0.25, repeat: Infinity, ease: "easeInOut", delay: i * 0.08 }}
+            />
+          ))}
+        </div>
+        <div className="relative flex items-center gap-3">
+          <motion.div
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+            className="grid h-10 w-10 place-items-center rounded-lg bg-accent/40 text-primary"
+          >
+            <AudioWaveform className="h-5 w-5" strokeWidth={1.75} />
+          </motion.div>
           <div className="min-w-0 flex-1">
             <p className="font-display text-sm font-semibold">Analyse des tonalités</p>
             <p className="text-[11px] text-muted-foreground">
@@ -71,15 +93,27 @@ export function AnalysisTab() {
           </div>
           <span className="text-lg font-semibold text-primary tabular-nums">{pct}%</span>
         </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-elevated">
-          <div className="h-full bg-gradient-gold transition-all" style={{ width: `${pct}%` }} />
+        <div className="relative mt-3 h-1.5 overflow-hidden rounded-full bg-surface-elevated">
+          <motion.div
+            className="h-full bg-gradient-gold"
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+          />
         </div>
-        {engine.currentTrackName && (
-          <p className="mt-2 truncate text-[11px] text-muted-foreground">
-            En cours : <span className="text-foreground">{engine.currentTrackName}</span>
-          </p>
-        )}
-      </div>
+        <AnimatePresence>
+          {engine.currentTrackName && (
+            <motion.p
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="relative mt-2 truncate text-[11px] text-muted-foreground"
+            >
+              En cours : <span className="text-foreground">{engine.currentTrackName}</span>
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatCard label="Total" value={String(engine.total)} />
@@ -101,28 +135,29 @@ export function AnalysisTab() {
 
       <div className="flex flex-wrap gap-2">
         {engine.running && !engine.paused ? (
-          <button
+          <MotionButton
             onClick={() => keyAnalysisEngine.pause()}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:border-border-strong"
           >
-            <Pause className="h-3.5 w-3.5" /> Suspendre
-          </button>
+            <CirclePause className="h-3.5 w-3.5" strokeWidth={1.75} /> Suspendre
+          </MotionButton>
         ) : (
-          <button
+          <MotionButton
             onClick={() => (engine.paused ? keyAnalysisEngine.resume() : keyAnalysisEngine.start())}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground"
+            whileHover={{ y: -2, scale: 1.03, boxShadow: "0 10px 24px -8px rgba(93,214,44,0.55)" }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-gold"
           >
-            <Play className="h-3.5 w-3.5" /> {engine.paused ? "Reprendre" : "Démarrer"}
-          </button>
+            <CirclePlay className="h-3.5 w-3.5" strokeWidth={1.75} /> {engine.paused ? "Reprendre" : "Démarrer"}
+          </MotionButton>
         )}
-        <button
+        <MotionButton
           onClick={() => { keyAnalysisEngine.requeue("errors"); keyAnalysisEngine.start(); }}
           disabled={engine.errors === 0}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <RefreshCw className="h-3.5 w-3.5" /> Réanalyser erreurs
-        </button>
-        <button
+          <Repeat className="h-3.5 w-3.5" strokeWidth={1.75} /> Réanalyser erreurs
+        </MotionButton>
+        <MotionButton
           onClick={() => {
             if (window.confirm("Réanalyser toute la bibliothèque ?")) {
               keyAnalysisEngine.requeue("all");
@@ -131,8 +166,8 @@ export function AnalysisTab() {
           }}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium hover:border-border-strong"
         >
-          <ListRestart className="h-3.5 w-3.5" /> Tout réanalyser
-        </button>
+          <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} /> Tout réanalyser
+        </MotionButton>
       </div>
 
       <ul className="overflow-hidden rounded-xl border border-border bg-surface">
@@ -209,6 +244,6 @@ function StatusDot({ trackId, hasKey }: { trackId: string; hasKey: boolean }) {
   const isCurrent = current && engine.log[0]?.message.startsWith(current);
   // Fallback: highlight the current-name row.
   void isCurrent; void trackId;
-  if (hasKey) return <Check className="h-3.5 w-3.5 text-primary" />;
-  return <AlertCircle className="h-3.5 w-3.5 text-muted-foreground/50" />;
+  if (hasKey) return <BadgeCheck className="h-3.5 w-3.5 text-primary" />;
+  return <CircleAlert className="h-3.5 w-3.5 text-muted-foreground/50" />;
 }

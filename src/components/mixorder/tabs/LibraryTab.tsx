@@ -17,10 +17,11 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   Search, ArrowUpDown, ArrowUp, ArrowDown, GripVertical,
-  X, Trash2, Check,
-  FolderInput, Move, Music2, Copy,
-  Clock, SlidersHorizontal, Info,
+  X, Trash2, BadgeCheck,
+  FolderInput, ArrowUpDown as MoveIcon, AudioLines, CopyCheck,
+  TimerReset, SlidersHorizontal, Info,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext, PointerSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors, closestCenter,
@@ -213,7 +214,7 @@ export function LibraryTab() {
               : "border-border bg-surface text-foreground hover:border-border-strong"
           }`}
         >
-          <Move className="h-5 w-5" />
+          <MoveIcon className="h-5 w-5" />
         </button>
         <button
           type="button"
@@ -370,7 +371,7 @@ export function LibraryTab() {
                         )}
                       </span>
                     )}
-                    {active && fixed && <Check className="h-4 w-4 text-primary" />}
+                    {active && fixed && <BadgeCheck className="h-4 w-4 text-primary" />}
                   </button>
                 </li>
               );
@@ -419,7 +420,7 @@ function EmptyState({
   return (
     <div className="rounded-2xl border border-dashed border-border bg-surface/40 p-8 text-center animate-fade-in">
       <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-primary/10 text-primary">
-        <Music2 className="h-7 w-7" />
+        <AudioLines className="h-7 w-7" />
       </div>
       <h3 className="font-display text-base font-semibold text-foreground">
         Aucun morceau importé
@@ -519,7 +520,7 @@ function TrackCard({
         >
           {selected ? (
             <div className="grid h-5 w-5 place-items-center rounded-md bg-primary text-primary-foreground">
-              <Check className="h-3 w-3" strokeWidth={3} />
+              <BadgeCheck className="h-3 w-3" strokeWidth={3} />
             </div>
           ) : (
             <div className="h-5 w-5 rounded-md border-2 border-border-strong" />
@@ -558,7 +559,7 @@ function TrackCard({
               className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-orange-500/15 text-orange-500"
               aria-label="Doublon"
             >
-              <Copy className="h-2.5 w-2.5" />
+              <CopyCheck className="h-2.5 w-2.5" />
             </span>
           )}
         </div>
@@ -570,7 +571,7 @@ function TrackCard({
           </span>
           <EnergyBars level={energy} color={energyColor} />
           <span className="inline-flex items-center gap-1 tabular-nums text-muted-foreground">
-            <Clock className="h-3 w-3" />
+            <TimerReset className="h-3 w-3" />
             {formatDuration(track.durationSec)}
           </span>
         </div>
