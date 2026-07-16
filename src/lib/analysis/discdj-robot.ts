@@ -1810,6 +1810,57 @@ async function readNameWithRetries(
 }
 
 /**
+ * AutoSync-name — read the currently-loaded row inside a calibrated playlist
+ * zone. The native side scans the full zone for the DiscDJ blue "selected
+ * row", isolates it, then OCRs only that row. Cleans the resulting text and
+ * builds candidate strings for library matching.
+ */
+export async function readActivePlaylistRowOnce(
+  bridge: DiscDJBridge,
+  deck: DeckId,
+  playlistZone: import("./discdj-settings").CalibrationRect,
+): Promise<{
+  raw: string;
+  cleaned: string;
+  zoneTexts: string[];
+  candidates: string[];
+  reason: string | null;
+  zoneImage?: string | null;
+  activeRowImage?: string | null;
+  activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+}> {
+  if (typeof bridge.readPlaylistActiveName !== "function") {
+    // Fallback: legacy behavior — OCR the whole zone as-is.
+    const fallback = await readAndCleanNameOnce(bridge, deck, playlistZone);
+    return { ...fallback, reason: null };
+  }
+  try {
+    const r = await bridge.readPlaylistActiveName(deck, playlistZone);
+    const zoneTexts = (r.zoneTexts ?? []).map((s) => s.trim()).filter(Boolean);
+    const raw = r.raw ?? (zoneTexts.length > 0 ? zoneTexts.join(" ") : "");
+    const candidates = buildOcrNameCandidates(raw, zoneTexts);
+    return {
+      raw,
+      cleaned: r.name ?? candidates[0] ?? "",
+      zoneTexts,
+      candidates,
+      reason: r.reason ?? null,
+      zoneImage: r.zoneImage ?? null,
+      activeRowImage: r.activeRowImage ?? null,
+      activeRowFraction: r.activeRowFraction ?? null,
+    };
+  } catch (e) {
+    return {
+      raw: "",
+      cleaned: "",
+      zoneTexts: [],
+      candidates: [],
+      reason: `capture-failed: ${describe(e)}`,
+    };
+  }
+}
+
+/**
  * One OCR pass on the calibrated name zone. Returns both the raw text and a
  * cleaned version (control chars stripped, whitespace normalized, obvious
  * OCR parasites removed). The library-side normalization is separate and
