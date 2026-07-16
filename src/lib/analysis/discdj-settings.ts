@@ -12,10 +12,19 @@ export type DiscDJMatchingMode = "smart";
  *  - "verification"  : legacy behavior — identify each DiscDJ reading via
  *                      title + duration matching, ask the user when
  *                      ambiguous.
+ *  - "autosync-name" : ordered flow with per-track name verification. The
+ *                      robot captures the ENTIRE playlist list, detects the
+ *                      currently-loaded blue row automatically, and OCRs
+ *                      only that row.
  */
 export type DiscDJAnalysisMode = "auto-sync" | "verification" | "autosync-name";
 
-/** The calibratable elements. `playlistButton`/`backButton`/`nameZoneDeck*` are used by the AutoSync (name-checked) mode. */
+/**
+ * Calibratable elements.
+ *  - `playlistButton`, `backButton`, `playlistZoneDeck*` are used by AutoSync
+ *    (name-checked). `playlistZone*` is the FULL playlist list rectangle,
+ *    from which the native side detects the active blue row.
+ */
 export type CalibrationTarget =
   | "nextDeck1"
   | "nextDeck2"
@@ -23,8 +32,8 @@ export type CalibrationTarget =
   | "bpmDeck2"
   | "playlistButton"
   | "backButton"
-  | "nameZoneDeck1"
-  | "nameZoneDeck2";
+  | "playlistZoneDeck1"
+  | "playlistZoneDeck2";
 
 /** Screen where a calibration target lives. Governs the contextual capture flow. */
 export type CalibrationScreen = "main" | "playlist";
@@ -35,15 +44,14 @@ export const CALIBRATION_SCREEN: Record<CalibrationTarget, CalibrationScreen> = 
   bpmDeck1: "main",
   bpmDeck2: "main",
   playlistButton: "main",
-  // Corrected: the Back button only exists on the playlist screen.
   backButton: "playlist",
-  nameZoneDeck1: "playlist",
-  nameZoneDeck2: "playlist",
+  playlistZoneDeck1: "playlist",
+  playlistZoneDeck2: "playlist",
 };
 
 /** Returns true for calibration targets that are rectangles (zones) rather than points. */
 export function isRectTarget(target: CalibrationTarget): boolean {
-  return target.startsWith("bpm") || target.startsWith("nameZone");
+  return target.startsWith("bpm") || target.startsWith("playlistZone");
 }
 
 
@@ -70,10 +78,13 @@ export interface DiscDJCalibration {
   playlistButton: CalibrationPoint | null;
   /** AutoSync: tap point on the "Back to main screen" button (playlist screen). */
   backButton: CalibrationPoint | null;
-  /** AutoSync: OCR rectangle for the currently-loaded track name in the playlist, deck 1. */
-  nameZoneDeck1: CalibrationRect | null;
-  /** AutoSync: OCR rectangle for the currently-loaded track name in the playlist, deck 2. */
-  nameZoneDeck2: CalibrationRect | null;
+  /**
+   * AutoSync: full playlist list rectangle for deck 1 / 2. The native side
+   * scans it for the currently-loaded blue row, isolates that row, and OCRs
+   * only that row. Calibrated once per deck.
+   */
+  playlistZoneDeck1: CalibrationRect | null;
+  playlistZoneDeck2: CalibrationRect | null;
   savedAt: number | null;
   /** Per-element last-calibration timestamps (ms epoch). */
   timestamps: Partial<Record<CalibrationTarget, number>>;
@@ -118,10 +129,12 @@ export interface DiscDJRobotSettings {
   waitAfterBackMs: number;
 }
 
-// v4: one canonical LANDSCAPE coordinate reference for direct and screenshot
-// calibration. Old v3 "current orientation" calibrations are invalidated to
-// avoid portrait/landscape drift and duplicate-looking OCR zones.
-const SETTINGS_KEY = "mixorder:discdj-robot:settings:v4";
+// v5: replaced the "first playlist row" name zone with a "full playlist
+// zone" that lets the native side auto-detect the active blue row.
+// Reading the v4 key would silently reuse the old, too-small rectangles, so
+// we invalidate on purpose — the user recalibrates the playlist zone once
+// per deck.
+const SETTINGS_KEY = "mixorder:discdj-robot:settings:v5";
 
 export const DEFAULT_DISCDJ_SETTINGS: DiscDJRobotSettings = {
   calibration: {
@@ -131,8 +144,8 @@ export const DEFAULT_DISCDJ_SETTINGS: DiscDJRobotSettings = {
     bpmDeck2: null,
     playlistButton: null,
     backButton: null,
-    nameZoneDeck1: null,
-    nameZoneDeck2: null,
+    playlistZoneDeck1: null,
+    playlistZoneDeck2: null,
 
 
     savedAt: null,
@@ -219,9 +232,6 @@ export function setCalibrationElement(
     ...settings,
     calibration: {
       ...settings.calibration,
-      // Replace the previous value completely. There is exactly one active
-      // point/rectangle per element; screenshot and direct calibration both
-      // land in the same canonical landscape frame.
       [target]: normalizedValue,
       timestamps,
       savedAt: normalizedValue ? now : settings.calibration.savedAt,
@@ -233,6 +243,11 @@ export function getDeckCalibration(settings: DiscDJRobotSettings, deck: DeckId) 
   return deck === 1
     ? { next: settings.calibration.nextDeck1, bpmZone: settings.calibration.bpmDeck1 }
     : { next: settings.calibration.nextDeck2, bpmZone: settings.calibration.bpmDeck2 };
+}
+
+/** Helper — playlist zone for a deck (AutoSync name mode). */
+export function getPlaylistZone(settings: DiscDJRobotSettings, deck: DeckId): CalibrationRect | null {
+  return deck === 1 ? settings.calibration.playlistZoneDeck1 : settings.calibration.playlistZoneDeck2;
 }
 
 export function clamp01(v: number): number {
@@ -280,8 +295,8 @@ function normalizeCalibration(input: Partial<DiscDJCalibration> | undefined): Di
     bpmDeck2: normalizeRect(input?.bpmDeck2),
     playlistButton: normalizePoint(input?.playlistButton),
     backButton: normalizePoint(input?.backButton),
-    nameZoneDeck1: normalizeRect(input?.nameZoneDeck1),
-    nameZoneDeck2: normalizeRect(input?.nameZoneDeck2),
+    playlistZoneDeck1: normalizeRect(input?.playlistZoneDeck1),
+    playlistZoneDeck2: normalizeRect(input?.playlistZoneDeck2),
 
 
     savedAt: typeof input?.savedAt === "number" ? input.savedAt : null,
