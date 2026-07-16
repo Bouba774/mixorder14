@@ -391,13 +391,17 @@ export function useDiscDJRobot() {
       }));
     }));
     subs.push(bridge.addBackgroundListener("discdjPhase", (payload) => {
-      const p = payload as { phase?: string };
+      const p = payload as { phase?: string; message?: string };
       const phase = (p?.phase as RobotPhase | undefined) ?? "reading";
       if (phase === "error" || phase === "done" || phase === "idle") {
         backgroundRunRef.current = false;
         keyAnalysisEngine.setSlowMode(false);
       }
-      setState((s) => ({ ...s, phase }));
+      setState((s) => ({
+        ...s,
+        phase,
+        errorMessage: phase === "error" ? p?.message ?? s.errorMessage ?? "Blocage détecté par le robot DiscDJ." : s.errorMessage,
+      }));
     }));
     subs.push(bridge.addBackgroundListener("discdjLog", (payload) => {
       const p = payload as { level?: RobotLogLevel; message?: string };
