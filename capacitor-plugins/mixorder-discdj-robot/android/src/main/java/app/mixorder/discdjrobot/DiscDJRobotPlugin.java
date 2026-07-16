@@ -342,6 +342,10 @@ public class DiscDJRobotPlugin extends Plugin {
                 .replaceAll("\\s+", " ")
                 .trim();
         return s;
+    }
+
+    @PluginMethod
+    public void checkReady(PluginCall call) {
         DiscDJAccessibilityService svc = DiscDJAccessibilityService.getInstance();
         String pkg = findInstalledDiscDJPackage(getContext());
         JSObject out = new JSObject();
