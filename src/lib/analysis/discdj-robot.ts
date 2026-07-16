@@ -676,12 +676,23 @@ export function useDiscDJRobot() {
             if (runIdRef.current !== runId) return;
             await ensureDiscDJForeground(bridge, log);
 
-            // 4. OCR the calibrated name zone.
-            const nameRead = await readAndCleanNameOnce(bridge, deck, nameZone!);
-            const { cleaned } = nameRead;
+            // 4. Capture the FULL playlist zone, auto-detect the active
+            //    blue row, and OCR only that row.
+            const nameRead = await readActivePlaylistRowOnce(bridge, deck, nameZone!);
+            const { cleaned, reason } = nameRead;
             lastOcr = cleaned;
+            if (reason === "no-active-row") {
+              const msg = `${progress} Ligne active DiscDJ introuvable dans la zone playlist — recalibre la zone playlist platine ${deck}.`;
+              log("error", msg);
+              if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
+                setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+                return;
+              }
+              setState((s) => ({ ...s, phase: "error", errorMessage: msg }));
+              return;
+            }
             if (!cleaned) {
-              log("warning", `${progress} Nom illisible — retour et nouvelle tentative.`);
+              log("warning", `${progress} Nom illisible sur la ligne active — retour et nouvelle tentative.`);
               if (!(await returnToMainStrict(bridge, deck, backBtn!, settings))) {
                 const msg = `${progress} Retour écran principal refusé — analyse arrêtée pour éviter un décalage.`;
                 log("error", msg);
