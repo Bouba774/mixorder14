@@ -886,22 +886,35 @@ export function useDiscDJRobot() {
 
 
 
-      // ---------- AUTO-SYNC MODE ----------
-      // Deterministic order: DiscDJ position `i` ALWAYS corresponds to
-      // library track `i`. We never re-order based on OCR success. If a
-      // BPM can't be read we mark the track "à réanalyser" and still
-      // advance to the next one so the sequence stays aligned.
+      // ---------- AUTO-SYNC MODE (Ordre aligné) ----------
+      // Fast, robust, name-free flow.
+      //  - Library order is the source of truth: DiscDJ track N → library N.
+      //  - Read BPM (robust multi-heuristic OCR), save immediately, tap Next,
+      //    smart-wait until BPM actually changes, then read the next one.
+      //  - No name OCR, no vote quorum, no matching.
+      //  - On unreadable BPM: mark the track "à réanalyser" and still tap
+      //    Next so the alignment is preserved. The user retries only those
+      //    tracks individually at the end.
+      //  - Progressive save after every track → resumable on any interruption.
       if (settings.analysisMode === "auto-sync") {
-        const stepStartedAt: number[] = [];
         const runStartedAt = Date.now();
         const foundBpms: RunRecap["foundBpms"] = [];
         const missing: RunRecap["missing"] = [];
+        const stepTimes: number[] = [];
+        const total = ordered.length - startIdx;
+        const perTrackAttempts = Math.max(2, Math.min(5, settings.bpmMaxAttempts));
+
+        setState((s) => ({ ...s, totalRun: total }));
+        log("info", `Ordre aligné : ${total} morceau(x) à traiter (départ n°${startIdx + 1}).`);
+
+        let previousBpm: number | null = null;
 
         for (let i = startIdx; i < ordered.length; i++) {
           if (runIdRef.current !== runId) return;
           const track = ordered[i];
-          const stepStart = Date.now();
           const positionLabel = `${i + 1}/${ordered.length}`;
+          const progress = `[${positionLabel}]`;
+          const stepStart = Date.now();
 
           setState((s) => ({
             ...s,
@@ -911,73 +924,63 @@ export function useDiscDJRobot() {
             currentReading: null,
           }));
 
-          let processedThisStep = false;
-
           if (skipAlreadyBpm && track.bpm != null) {
-            log("info", `Morceau ${positionLabel} « ${track.name} » : BPM déjà présent, ignoré.`);
+            log("info", `${progress} « ${track.name} » — BPM déjà présent, ignoré.`);
             setState((s) => ({ ...s, skipped: s.skipped + 1 }));
-            processedThisStep = true;
           } else {
-            // Wait for the track to actually be ready before OCR — minimum
-            // configured delay from the previous Next tap. (First iteration
-            // gets waitOnOpenMs which was already applied above.)
-            if (i > startIdx && settings.minReadyDelayMs > 0) {
-              await sleep(settings.minReadyDelayMs);
+            if (i === startIdx && settings.waitBeforeReadMs > 0) {
+              await bgSleep(bridge, settings.waitBeforeReadMs);
             }
             if (runIdRef.current !== runId) return;
 
-            // Vote-based BPM reading: up to bpmMaxAttempts OCR passes,
-            // early exit as soon as `bpmValidVoteCount` identical valid
-            // readings (40 ≤ BPM ≤ 240) have been collected.
-            const voted = await readBpmWithVote(bridge, deck, settings, log, positionLabel, () => runIdRef.current === runId);
+            log("info", `${progress} Morceau en cours : « ${track.name} ».`);
+            const robust = await readBpmRobust(
+              bridge,
+              deck,
+              cal.bpmZone!,
+              settings,
+              perTrackAttempts,
+              previousBpm,
+              () => runIdRef.current === runId,
+            );
             if (runIdRef.current !== runId) return;
-            const reading = voted.reading;
-            setState((s) => ({ ...s, currentReading: reading }));
 
-            if (reading.endOfPlaylist) {
+            if (robust.reading.endOfPlaylist) {
               log("success", "Fin de playlist DiscDJ détectée.");
               break;
             }
 
-            if (voted.bpm != null) {
-              // Persist BEFORE tapping Next — the invariant is: never
-              // advance until the current track's BPM has been saved.
-              setTrackAnalysis(track.id, { bpm: voted.bpm }, "discdj-auto");
+            setState((s) => ({ ...s, currentReading: robust.reading }));
+
+            if (robust.bpm != null) {
+              setTrackAnalysis(track.id, { bpm: robust.bpm }, "discdj-auto");
               processedRef.current.add(track.id);
-              foundBpms.push({ index: i + 1, name: track.name, bpm: voted.bpm });
+              foundBpms.push({ index: i + 1, name: track.name, bpm: robust.bpm });
               appendJournal(fingerprint, {
                 kind: "track",
                 ts: Date.now(),
                 trackId: track.id,
                 name: track.name,
-                bpm: voted.bpm,
+                bpm: robust.bpm,
                 outcome: "success",
-                durationMs: 0,
-                attempts: voted.attempts,
-                message: `Vote ×${voted.voteCount}/${voted.attempts}`,
+                durationMs: Date.now() - stepStart,
+                attempts: robust.attempts,
               });
+              log("success", `${progress} BPM détecté ${robust.bpm} → enregistré pour « ${track.name} ».`);
+              previousBpm = robust.bpm;
+              setState((s) => ({ ...s, doneInRun: processedRef.current.size }));
+
               if (settings.autosaveEachStep) {
                 snapshot = markRun(
                   snapshot ?? { v: 1, name: p.name, tracks: {} },
                   p.name,
                   { sourceId: "discdj-auto", startedAt: runStartedAt, lastPath: track.path },
                 );
-                if (reading.title) {
-                  snapshot = rememberAlias(snapshot, p.name, normalizeTitle(reading.title), track.path);
-                }
                 saveSnapshot(fingerprint, snapshot);
               }
-              log(
-                "success",
-                `Morceau ${positionLabel} « ${track.name} » : BPM ${voted.bpm} enregistré (vote ×${voted.voteCount} sur ${voted.attempts} tentatives).`,
-              );
-              setState((s) => ({ ...s, doneInRun: processedRef.current.size }));
-              processedThisStep = true;
             } else {
-              // OCR failed after every attempt — mark the track and keep
-              // the sequence aligned by still tapping Next.
               missing.push({ index: i + 1, name: track.name });
-              const reason = reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
+              const reason = robust.reason ?? robust.reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
               appendJournal(fingerprint, {
                 kind: "track",
                 ts: Date.now(),
@@ -985,16 +988,11 @@ export function useDiscDJRobot() {
                 name: track.name,
                 bpm: null,
                 outcome: "retry",
-                durationMs: 0,
-                attempts: settings.maxAttempts,
+                durationMs: Date.now() - stepStart,
+                attempts: robust.attempts,
                 message: reason,
               });
-              log(
-                "warning",
-                `Morceau ${positionLabel} « ${track.name} » : marqué « À réanalyser » (${reason}).`,
-              );
-              // Persist the "needs re-analysis" hint on the snapshot so the
-              // user can filter these tracks later.
+              log("warning", `${progress} BPM illisible pour « ${track.name} » — marqué à réanalyser.`);
               const snap = snapshot ?? { v: 1 as const, name: p.name, tracks: {} };
               snapshot = {
                 ...snap,
@@ -1008,42 +1006,45 @@ export function useDiscDJRobot() {
                   },
                 },
               };
+              // Also mark run resume position on failures so a restart moves
+              // past the failed track instead of replaying it.
+              snapshot = markRun(
+                snapshot,
+                p.name,
+                { sourceId: "discdj-auto", startedAt: runStartedAt, lastPath: track.path },
+              );
               if (settings.autosaveEachStep) saveSnapshot(fingerprint, snapshot);
               setState((s) => ({ ...s, needsRetryCount: s.needsRetryCount + 1 }));
-              processedThisStep = true;
             }
           }
 
-          // ETA — rolling average of the last 5 steps.
-          stepStartedAt.push(Date.now() - stepStart);
-          const recent = stepStartedAt.slice(-5);
-          const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+          // Rolling ETA over last 8 steps.
+          stepTimes.push(Date.now() - stepStart);
+          if (stepTimes.length > 8) stepTimes.shift();
+          const avg = stepTimes.reduce((a, b) => a + b, 0) / stepTimes.length;
           const remaining = ordered.length - (i + 1);
           setState((s) => ({ ...s, etaMsRemaining: remaining > 0 ? Math.round(avg * remaining) : 0 }));
 
-          if (!processedThisStep) continue; // safety — should never trigger
           if (i + 1 >= ordered.length) break;
 
+          // Advance DiscDJ, then smart-wait until BPM actually changes.
           setState((s) => ({ ...s, phase: "advancing" }));
           try {
             await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs });
           } catch (e) {
-            const message = describe(e);
-            log("warning", `Clic Next échoué (${message}) — nouvelle tentative après une courte pause.`);
-            await sleep(600);
+            log("warning", `${progress} Clic Next échoué (${describe(e)}) — nouvelle tentative.`);
+            await bgSleep(bridge, 400);
             try {
               await bridge.tapNext(deck, { point: cal.next, pressDurationMs: settings.pressDurationMs });
             } catch (e2) {
-              log("error", `Second clic Next échoué (${describe(e2)}) — la boucle continue au morceau suivant.`);
+              log("error", `${progress} Second clic Next échoué : ${describe(e2)}.`);
               setState((s) => ({ ...s, lastError: describe(e2) }));
             }
           }
-          await sleep(settings.waitAfterClickMs);
           if (runIdRef.current !== runId) return;
+          await waitForNextTrack(bridge, deck, cal.bpmZone!, previousBpm, settings, () => runIdRef.current === runId);
         }
 
-
-        // Clear resume marker on clean completion.
         if (snapshot) {
           snapshot = markRun(snapshot, p.name, undefined);
           saveSnapshot(fingerprint, snapshot);
@@ -1057,8 +1058,9 @@ export function useDiscDJRobot() {
         };
         log(
           "success",
-          `Analyse terminée : ${recap.analyzedCount} morceau(x) analysé(s), ${recap.needsRetryCount} à réanalyser.`,
+          `Analyse terminée : ${recap.analyzedCount}/${total} BPM enregistrés · ${recap.needsRetryCount} à réanalyser.`,
         );
+        keyAnalysisEngine.setSlowMode(false);
         setState((s) => ({
           ...s,
           phase: "done",
@@ -1735,6 +1737,128 @@ async function readBpmOnce(
     if (isPlausibleBpm(r.bpm)) return Math.round(r.bpm);
   } catch { /* handled by caller retry */ }
   return null;
+}
+
+/**
+ * Robust BPM parser applied to the raw OCR text of the BPM zone.
+ * Tries multiple heuristics in order:
+ *  1. Digits following a "BPM" label (strongest signal).
+ *  2. Any 2-3 digit cluster falling in [40, 240].
+ * Fixes OCR confusions (O↔0, l/I↔1, S↔5, B↔8) and prefers 3-digit values
+ * so a dropped leading digit (150 → 50) doesn't win over a full read.
+ */
+function parseBpmRobust(reading: DiscDJReading): number | null {
+  const parts: string[] = [];
+  if (reading.raw) parts.push(reading.raw);
+  if (reading.zoneTexts) parts.push(...reading.zoneTexts);
+  if (parts.length === 0) return null;
+  const cleaned = parts
+    .join(" ")
+    .replace(/[Oo]/g, "0")
+    .replace(/[lI|]/g, "1")
+    .replace(/S(?=\d)|(?<=\d)S/g, "5")
+    .replace(/B(?=\d)|(?<=\d)B/g, "8");
+  // 1. After "BPM" — accept a few non-digits between (":", space, ".")
+  const labelled = cleaned.match(/BPM[^0-9]{0,8}(\d{2,3})/i);
+  if (labelled) {
+    const v = Number(labelled[1]);
+    if (v >= 40 && v <= 240) return Math.round(v);
+  }
+  // 2. Fallback: gather all 2-3 digit clusters and pick the best in-range.
+  const clusters = Array.from(cleaned.matchAll(/\d{2,3}/g))
+    .map((m) => Number(m[0]))
+    .filter((n) => n >= 40 && n <= 240);
+  if (clusters.length === 0) return null;
+  const three = clusters.filter((n) => n >= 100);
+  return three[0] ?? clusters[0];
+}
+
+/**
+ * Robust BPM read used by the Ordre aligné mode.
+ *
+ * Performs up to `maxAttempts` OCR passes. On each pass we trust the native
+ * parser if it produced a plausible value; otherwise we reparse the raw
+ * OCR text with `parseBpmRobust`. Returns as soon as:
+ *  - two attempts agree on the same value, OR
+ *  - after ≥2 attempts we have a value that clearly differs from
+ *    `previousBpm` (meaning the deck already loaded a new track).
+ * Falls back to the most-voted plausible value across all attempts.
+ */
+async function readBpmRobust(
+  bridge: DiscDJBridge,
+  deck: DeckId,
+  bpmZone: CalibrationRect,
+  settings: DiscDJRobotSettings,
+  maxAttempts: number,
+  previousBpm: number | null,
+  stillRunning: () => boolean,
+): Promise<{ bpm: number | null; reading: DiscDJReading; attempts: number; reason?: string }> {
+  const counts = new Map<number, number>();
+  let last: DiscDJReading = { bpm: null, title: null, durationSec: null };
+  let attempt = 0;
+  for (attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (!stillRunning()) break;
+    try {
+      last = await bridge.readBpm(deck, { bpmZone });
+    } catch {
+      await bgSleep(bridge, 300);
+      continue;
+    }
+    if (last.endOfPlaylist) return { bpm: null, reading: last, attempts: attempt };
+
+    const val: number | null = isPlausibleBpm(last.bpm) ? Math.round(last.bpm) : parseBpmRobust(last);
+    if (val != null && val >= 40 && val <= 240) {
+      counts.set(val, (counts.get(val) ?? 0) + 1);
+      const cnt = counts.get(val) ?? 0;
+      if (cnt >= 2) return { bpm: val, reading: last, attempts: attempt };
+      if (attempt >= 2 && (previousBpm == null || val !== previousBpm)) {
+        return { bpm: val, reading: last, attempts: attempt };
+      }
+    }
+    if (attempt < maxAttempts) {
+      await bgSleep(bridge, Math.max(200, Math.round(settings.waitBeforeReadMs / 3)));
+    }
+  }
+  let bestVal: number | null = null;
+  let bestC = 0;
+  for (const [v, c] of counts) {
+    if (c > bestC) {
+      bestVal = v;
+      bestC = c;
+    }
+  }
+  if (bestVal != null && bestC >= 1) return { bpm: bestVal, reading: last, attempts: attempt };
+  return { bpm: null, reading: last, attempts: attempt, reason: last.parseReason ?? "BPM illisible" };
+}
+
+/**
+ * Smart post-Next wait: after tapping Next, poll the BPM zone until it
+ * differs from `previousBpm` (meaning DiscDJ loaded a new track), up to a
+ * ceiling around `waitAfterClickMs`. Avoids fixed sleeps when the deck
+ * already updated, and stops early once the new track is on screen.
+ */
+async function waitForNextTrack(
+  bridge: DiscDJBridge,
+  deck: DeckId,
+  bpmZone: CalibrationRect,
+  previousBpm: number | null,
+  settings: DiscDJRobotSettings,
+  stillRunning: () => boolean,
+): Promise<void> {
+  const minWait = Math.max(250, settings.minReadyDelayMs);
+  const maxWait = Math.max(minWait + 500, settings.waitAfterClickMs + 1500);
+  const started = Date.now();
+  await bgSleep(bridge, minWait);
+  while (Date.now() - started < maxWait) {
+    if (!stillRunning()) return;
+    try {
+      const r = await bridge.readBpm(deck, { bpmZone });
+      if (r.endOfPlaylist) return;
+      const val = isPlausibleBpm(r.bpm) ? Math.round(r.bpm) : parseBpmRobust(r);
+      if (val != null && (previousBpm == null || val !== previousBpm)) return;
+    } catch { /* keep polling */ }
+    await bgSleep(bridge, 250);
+  }
 }
 
 /**
