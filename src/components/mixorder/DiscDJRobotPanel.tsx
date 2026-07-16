@@ -475,7 +475,7 @@ function CalibrationPanel({
   onTestClick: (deck: DeckId) => Promise<{ changed: boolean; message: string }>;
   onTestPlaylist: () => Promise<{ ok: boolean; message: string }>;
   onTestBack: () => Promise<{ ok: boolean; message: string }>;
-  onTestNameZone: (deck: DeckId) => Promise<{ ok: boolean; raw: string; cleaned: string; message: string }>;
+  onTestNameZone: (deck: DeckId) => Promise<{ ok: boolean; raw: string; cleaned: string; message: string; zoneImage?: string | null; activeRowImage?: string | null; activeRowFraction?: { x: number; y: number; width: number; height: number } | null; reason?: string | null }>;
 }) {
   const [method, setMethod] = useState<"direct" | "screenshot">("direct");
   const [busy, setBusy] = useState<CalibrationTarget | null>(null);
