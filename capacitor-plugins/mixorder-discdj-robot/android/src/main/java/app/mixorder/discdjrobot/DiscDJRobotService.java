@@ -86,6 +86,7 @@ public class DiscDJRobotService extends Service {
     private String currentName = null;
     private long stepStartedAt = 0L;
     private final List<Long> recentStepMs = new ArrayList<>();
+    private int watchdogSeq = 0;
 
     private Handler main;
 
@@ -221,6 +222,7 @@ public class DiscDJRobotService extends Service {
             waitOpen = new JSONObject(intent.getStringExtra("payload")).optInt("waitOnOpenMs", 1000);
         } catch (Exception ignored) {}
         openDiscDJ();
+        emitLog("info", "Ouverture de DiscDJ.");
         // Small delay before the first read for DiscDJ to fully load.
         if (waitOpen > 0) {
             try { Thread.sleep(Math.min(2500, waitOpen)); } catch (InterruptedException ignored) {}
@@ -248,6 +250,7 @@ public class DiscDJRobotService extends Service {
             return;
         }
         DiscDJAccessibilityService.WindowSnapshot snap = svc.getWindowSnapshot(discdjPackage);
+        emitLog("info", "Vérification du premier plan.");
         if (!snap.foregroundMatches || !snap.landscape) {
             if (!visibilityPaused) {
                 visibilityPaused = true;
