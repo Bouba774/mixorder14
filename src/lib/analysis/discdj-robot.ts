@@ -1740,6 +1740,128 @@ async function readBpmOnce(
 }
 
 /**
+ * Robust BPM parser applied to the raw OCR text of the BPM zone.
+ * Tries multiple heuristics in order:
+ *  1. Digits following a "BPM" label (strongest signal).
+ *  2. Any 2-3 digit cluster falling in [40, 240].
+ * Fixes OCR confusions (O↔0, l/I↔1, S↔5, B↔8) and prefers 3-digit values
+ * so a dropped leading digit (150 → 50) doesn't win over a full read.
+ */
+function parseBpmRobust(reading: DiscDJReading): number | null {
+  const parts: string[] = [];
+  if (reading.raw) parts.push(reading.raw);
+  if (reading.zoneTexts) parts.push(...reading.zoneTexts);
+  if (parts.length === 0) return null;
+  const cleaned = parts
+    .join(" ")
+    .replace(/[Oo]/g, "0")
+    .replace(/[lI|]/g, "1")
+    .replace(/S(?=\d)|(?<=\d)S/g, "5")
+    .replace(/B(?=\d)|(?<=\d)B/g, "8");
+  // 1. After "BPM" — accept a few non-digits between (":", space, ".")
+  const labelled = cleaned.match(/BPM[^0-9]{0,8}(\d{2,3})/i);
+  if (labelled) {
+    const v = Number(labelled[1]);
+    if (v >= 40 && v <= 240) return Math.round(v);
+  }
+  // 2. Fallback: gather all 2-3 digit clusters and pick the best in-range.
+  const clusters = Array.from(cleaned.matchAll(/\d{2,3}/g))
+    .map((m) => Number(m[0]))
+    .filter((n) => n >= 40 && n <= 240);
+  if (clusters.length === 0) return null;
+  const three = clusters.filter((n) => n >= 100);
+  return three[0] ?? clusters[0];
+}
+
+/**
+ * Robust BPM read used by the Ordre aligné mode.
+ *
+ * Performs up to `maxAttempts` OCR passes. On each pass we trust the native
+ * parser if it produced a plausible value; otherwise we reparse the raw
+ * OCR text with `parseBpmRobust`. Returns as soon as:
+ *  - two attempts agree on the same value, OR
+ *  - after ≥2 attempts we have a value that clearly differs from
+ *    `previousBpm` (meaning the deck already loaded a new track).
+ * Falls back to the most-voted plausible value across all attempts.
+ */
+async function readBpmRobust(
+  bridge: DiscDJBridge,
+  deck: DeckId,
+  bpmZone: CalibrationRect,
+  settings: DiscDJRobotSettings,
+  maxAttempts: number,
+  previousBpm: number | null,
+  stillRunning: () => boolean,
+): Promise<{ bpm: number | null; reading: DiscDJReading; attempts: number; reason?: string }> {
+  const counts = new Map<number, number>();
+  let last: DiscDJReading = { bpm: null, title: null, durationSec: null };
+  let attempt = 0;
+  for (attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (!stillRunning()) break;
+    try {
+      last = await bridge.readBpm(deck, { bpmZone });
+    } catch {
+      await bgSleep(bridge, 300);
+      continue;
+    }
+    if (last.endOfPlaylist) return { bpm: null, reading: last, attempts: attempt };
+
+    const val: number | null = isPlausibleBpm(last.bpm) ? Math.round(last.bpm) : parseBpmRobust(last);
+    if (val != null && val >= 40 && val <= 240) {
+      counts.set(val, (counts.get(val) ?? 0) + 1);
+      const cnt = counts.get(val) ?? 0;
+      if (cnt >= 2) return { bpm: val, reading: last, attempts: attempt };
+      if (attempt >= 2 && (previousBpm == null || val !== previousBpm)) {
+        return { bpm: val, reading: last, attempts: attempt };
+      }
+    }
+    if (attempt < maxAttempts) {
+      await bgSleep(bridge, Math.max(200, Math.round(settings.waitBeforeReadMs / 3)));
+    }
+  }
+  let bestVal: number | null = null;
+  let bestC = 0;
+  for (const [v, c] of counts) {
+    if (c > bestC) {
+      bestVal = v;
+      bestC = c;
+    }
+  }
+  if (bestVal != null && bestC >= 1) return { bpm: bestVal, reading: last, attempts: attempt };
+  return { bpm: null, reading: last, attempts: attempt, reason: last.parseReason ?? "BPM illisible" };
+}
+
+/**
+ * Smart post-Next wait: after tapping Next, poll the BPM zone until it
+ * differs from `previousBpm` (meaning DiscDJ loaded a new track), up to a
+ * ceiling around `waitAfterClickMs`. Avoids fixed sleeps when the deck
+ * already updated, and stops early once the new track is on screen.
+ */
+async function waitForNextTrack(
+  bridge: DiscDJBridge,
+  deck: DeckId,
+  bpmZone: CalibrationRect,
+  previousBpm: number | null,
+  settings: DiscDJRobotSettings,
+  stillRunning: () => boolean,
+): Promise<void> {
+  const minWait = Math.max(250, settings.minReadyDelayMs);
+  const maxWait = Math.max(minWait + 500, settings.waitAfterClickMs + 1500);
+  const started = Date.now();
+  await bgSleep(bridge, minWait);
+  while (Date.now() - started < maxWait) {
+    if (!stillRunning()) return;
+    try {
+      const r = await bridge.readBpm(deck, { bpmZone });
+      if (r.endOfPlaylist) return;
+      const val = isPlausibleBpm(r.bpm) ? Math.round(r.bpm) : parseBpmRobust(r);
+      if (val != null && (previousBpm == null || val !== previousBpm)) return;
+    } catch { /* keep polling */ }
+    await bgSleep(bridge, 250);
+  }
+}
+
+/**
  * Tap the Back button and wait for the main screen to settle. Best-effort
  * — a failed tap is recoverable because `ensureDiscDJForeground` is called
  * before the next action anyway.
