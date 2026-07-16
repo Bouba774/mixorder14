@@ -698,6 +698,92 @@ public class DiscDJAccessibilityService extends AccessibilityService {
         });
     }
 
+    /**
+     * Capture the current DiscDJ screen and return the bitmap crop
+     * corresponding to a canonical-landscape rect. Used by the playlist
+     * active-row detector.
+     */
+    public void captureZoneBitmap(final Rect displayCropRect, final String expectedPackage, final ZoneBitmapCallback cb) {
+        int[] display = getDisplaySize();
+        WindowSnapshot snap = getWindowSnapshot(expectedPackage);
+        if (!snap.foregroundMatches) { cb.onResult(null, null, "DiscDJ n'est pas au premier plan."); return; }
+        if (!snap.landscape) { cb.onResult(null, null, "DiscDJ doit être en mode paysage."); return; }
+        if (!rectFullyVisible(displayCropRect, display[0], display[1])) { cb.onResult(null, null, "Zone playlist hors écran."); return; }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) { cb.onResult(null, null, "Capture indisponible : Android 11+ requis."); return; }
+        Executor executor = command -> new Handler(Looper.getMainLooper()).post(command);
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, executor, new TakeScreenshotCallback() {
+                @Override public void onSuccess(ScreenshotResult screenshot) {
+                    Bitmap full;
+                    try {
+                        Bitmap hw = Bitmap.wrapHardwareBuffer(screenshot.getHardwareBuffer(), screenshot.getColorSpace());
+                        if (hw == null) throw new IllegalStateException("buffer vide");
+                        full = hw.copy(Bitmap.Config.ARGB_8888, false);
+                        screenshot.getHardwareBuffer().close();
+                    } catch (Exception e) {
+                        cb.onResult(null, null, "Capture impossible : " + e.getMessage()); return;
+                    }
+                    if (full.getWidth() < full.getHeight()) { cb.onResult(null, null, "Capture reçue en portrait."); return; }
+                    float sx = full.getWidth() / (float) display[0];
+                    float sy = full.getHeight() / (float) display[1];
+                    Rect crop = new Rect(
+                            Math.round(displayCropRect.left * sx),
+                            Math.round(displayCropRect.top * sy),
+                            Math.round(displayCropRect.right * sx),
+                            Math.round(displayCropRect.bottom * sy));
+                    if (!rectFullyVisible(crop, full.getWidth(), full.getHeight())) { cb.onResult(null, null, "Zone playlist invalide dans la capture."); return; }
+                    Bitmap cropped = Bitmap.createBitmap(full, crop.left, crop.top, crop.width(), crop.height());
+                    String url = bitmapDataUrl(cropped, Bitmap.CompressFormat.JPEG, 70);
+                    cb.onResult(cropped, url, null);
+                }
+                @Override public void onFailure(int errorCode) {
+                    cb.onResult(null, null, "Capture refusée (code " + errorCode + ").");
+                }
+            });
+        } catch (Exception e) {
+            cb.onResult(null, null, "Capture impossible : " + e.getMessage());
+        }
+    }
+
+    /** Run ML Kit OCR on all polarity variants of `bitmap` and merge line results. */
+    public void ocrBitmapLines(final Bitmap bitmap, final OcrLinesCallback cb) {
+        if (bitmap == null) { cb.onResult(new ArrayList<>()); return; }
+        final List<Bitmap> variants = prepareOcrVariants(bitmap);
+        if (variants.isEmpty()) variants.add(bitmap);
+        final List<String> allTexts = new ArrayList<>();
+        final int[] remaining = new int[] { variants.size() };
+        for (Bitmap variant : variants) {
+            TextRecognizer recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+            recognizer.process(InputImage.fromBitmap(variant, 0))
+                    .addOnSuccessListener(text -> {
+                        synchronized (allTexts) { allTexts.addAll(extractOcrTexts(text)); }
+                        recognizer.close();
+                        synchronized (remaining) { if (--remaining[0] == 0) cb.onResult(uniq(allTexts)); }
+                    })
+                    .addOnFailureListener(e -> {
+                        recognizer.close();
+                        synchronized (remaining) { if (--remaining[0] == 0) cb.onResult(uniq(allTexts)); }
+                    });
+        }
+    }
+
+    private static List<String> uniq(List<String> in) {
+        List<String> out = new ArrayList<>();
+        for (String s : in) {
+            if (s == null) continue;
+            String t = s.trim();
+            if (!t.isEmpty() && !out.contains(t)) out.add(t);
+        }
+        return out;
+    }
+
+    /** Expose the shared data-URL encoder for the plugin. */
+    public static String bitmapToDataUrl(Bitmap bitmap, boolean png) {
+        return bitmapDataUrl(bitmap, png ? Bitmap.CompressFormat.PNG : Bitmap.CompressFormat.JPEG, png ? 100 : 80);
+    }
+
+
+
     public interface CaptureCallback {
         void onResult(boolean cancelled, float nx, float ny, float nw, float nh);
     }
