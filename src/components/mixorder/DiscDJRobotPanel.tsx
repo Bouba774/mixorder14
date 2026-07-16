@@ -708,6 +708,82 @@ function CalibrationPanel({
   );
 }
 
+interface PlaylistZoneDiag {
+  deck: DeckId;
+  ok: boolean;
+  message: string;
+  cleaned: string;
+  zoneImage?: string | null;
+  activeRowImage?: string | null;
+  activeRowFraction?: { x: number; y: number; width: number; height: number } | null;
+  reason?: string | null;
+}
+
+/**
+ * Test-mode preview for the playlist zone: shows the captured zone with the
+ * detected active (blue) row highlighted, plus the isolated row and OCR text.
+ * Lets the user visually verify that the row detector picked the right line.
+ */
+function PlaylistZonePreview({ diag, onClose }: { diag: PlaylistZoneDiag; onClose: () => void }) {
+  const frac = diag.activeRowFraction;
+  const rowDetected = !!frac;
+  const badge = diag.reason === "no-active-row"
+    ? { label: "Aucune ligne bleue", tone: "bg-destructive/15 text-destructive" }
+    : rowDetected && diag.cleaned
+      ? { label: "Ligne active détectée · OCR ✓", tone: "bg-primary/15 text-primary" }
+      : rowDetected
+        ? { label: "Ligne détectée · OCR vide", tone: "bg-accent/40 text-foreground" }
+        : { label: "Diagnostic", tone: "bg-accent/40 text-foreground" };
+  return (
+    <div className="animate-fade-in space-y-2 rounded-lg border border-primary/30 bg-background/70 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.tone}`}>
+          {badge.label} · P{diag.deck}
+        </span>
+        <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:text-foreground" aria-label="Fermer">
+          <CircleX className="h-3 w-3" />
+        </button>
+      </div>
+      {diag.zoneImage ? (
+        <div className="relative overflow-hidden rounded-md border border-border/60 bg-background">
+          <img src={diag.zoneImage} alt={`Zone playlist P${diag.deck}`} className="block max-h-64 w-full object-contain" />
+          {frac && (
+            <div
+              className="pointer-events-none absolute rounded-sm border-2 border-primary shadow-[0_0_0_2px_rgba(93,214,44,0.35)]"
+              style={{
+                left: `${frac.x * 100}%`,
+                top: `${frac.y * 100}%`,
+                width: `${frac.width * 100}%`,
+                height: `${frac.height * 100}%`,
+                background: "rgba(93,214,44,0.15)",
+              }}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-border/60 bg-background/40 px-2 py-3 text-[10px] text-muted-foreground">
+          Aucune image de zone reçue.
+        </div>
+      )}
+      {diag.activeRowImage && (
+        <div>
+          <p className="mb-1 text-[10px] text-muted-foreground">Ligne active isolée (utilisée pour l'OCR) :</p>
+          <img src={diag.activeRowImage} alt="Ligne active" className="block max-h-16 w-full rounded border border-border/60 object-contain bg-background" />
+        </div>
+      )}
+      <div className="rounded-md bg-background/60 px-2 py-1.5 text-[10px]">
+        <p className="text-muted-foreground">Texte OCR :</p>
+        <p className="font-mono text-foreground">{diag.cleaned || <span className="italic text-muted-foreground">(vide)</span>}</p>
+      </div>
+      {diag.reason === "no-active-row" && (
+        <p className="rounded bg-destructive/10 px-2 py-1 text-[10px] text-destructive">
+          Aucune ligne au fond bleu n'a été trouvée. Recalibre la zone playlist en englobant toute la liste des morceaux visibles.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function MethodCard({ active, onClick, icon, title, subtitle, disabled }: { active: boolean; onClick: () => void; icon: ReactNode; title: string; subtitle: string; disabled?: boolean }) {
   return <button onClick={onClick} disabled={disabled} className={`flex flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition-colors disabled:opacity-50 ${active ? "border-primary/60 bg-accent/40" : "border-border bg-background/70"}`}><span className={`grid h-7 w-7 place-items-center rounded-lg ${active ? "bg-primary/15 text-primary" : "bg-surface-elevated text-muted-foreground"}`}>{icon}</span><span className="text-[11px] font-semibold leading-tight">{title}</span><span className="text-[9px] uppercase tracking-wide text-muted-foreground">{subtitle}</span></button>;
 }
