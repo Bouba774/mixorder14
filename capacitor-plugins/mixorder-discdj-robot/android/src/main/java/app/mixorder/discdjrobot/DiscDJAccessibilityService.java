@@ -607,7 +607,8 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             String normalized = normalizeOcrDigits(t);
             boolean cleanNumeric = normalized.matches("\\s*(?:bpm\\s*[:：]?)?\\s*\\d{2,3}(?:[.,]\\d+)?\\s*");
             int alphaCount = countLetters(normalized);
-            Matcher lm = BPM_LABELED_PATTERN.matcher(normalized);
+            String labelSource = normalized.replaceAll("(?i)8PM", "BPM");
+            Matcher lm = BPM_LABELED_PATTERN.matcher(labelSource);
             while (lm.find()) {
                 Double v = tryParseBpm(lm.group(1));
                 if (v != null) {
