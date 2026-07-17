@@ -26,6 +26,8 @@ export interface DiscDJBpmReading {
   duration: string | null;
   /** Every text node whose center falls inside the calibrated BPM zone. */
   zoneTexts?: string[];
+  /** Raw OCR variant lines, never concatenated. Mirrors zoneTexts on recent APKs. */
+  ocrVariants?: string[];
   /** Human-readable explanation when `bpm` is null (missing zone, no digit, etc.). */
   parseReason?: string | null;
   /** True only when the captured source is DiscDJ, never MixOrder/overlay. */

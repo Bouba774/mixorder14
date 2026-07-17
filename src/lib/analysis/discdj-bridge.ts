@@ -34,6 +34,7 @@ export interface DiscDJReading {
   raw?: string;
   /** Every text node detected inside the calibrated BPM zone. */
   zoneTexts?: string[];
+  ocrVariants?: string[];
   /** Human explanation when `bpm` is null. */
   parseReason?: string | null;
   /** True when the capture source is confirmed to be DiscDJ, not MixOrder/overlay. */
@@ -348,7 +349,7 @@ function createNativeBridge(): DiscDJBridge {
         title: r.title ?? null,
         durationSec,
         raw: r.raw ?? undefined,
-        zoneTexts: Array.isArray(r.zoneTexts) ? r.zoneTexts : [],
+        zoneTexts: Array.isArray(r.ocrVariants) ? r.ocrVariants : Array.isArray(r.zoneTexts) ? r.zoneTexts : [],
         parseReason: r.parseReason ?? null,
         sourceOk: r.sourceOk,
         orientationOk: r.orientationOk,
@@ -425,6 +426,7 @@ interface NativeReading {
   title: string | null;
   duration: string | null;
   zoneTexts?: string[];
+  ocrVariants?: string[];
   parseReason?: string | null;
   sourceOk?: boolean;
   orientationOk?: boolean;

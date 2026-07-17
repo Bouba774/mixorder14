@@ -404,8 +404,26 @@ export function useDiscDJRobot() {
       }));
     }));
     subs.push(bridge.addBackgroundListener("discdjLog", (payload) => {
-      const p = payload as { level?: RobotLogLevel; message?: string };
-      if (p?.message) log(p.level ?? "info", p.message);
+      const p = payload as { level?: RobotLogLevel; message?: string; diagnosticImage?: string | null; diagnosticLabel?: string | null };
+      if (!p?.message) return;
+      if (p.diagnosticImage) {
+        const project = projectRef.current;
+        if (project) {
+          appendRobotAction(projectFingerprint(project), p.level ?? "info", p.message, {
+            diagnosticImage: p.diagnosticImage,
+            diagnosticLabel: p.diagnosticLabel ?? "Capture OCR réellement analysée",
+          });
+        }
+        setState((s) => ({
+          ...s,
+          logs: [
+            { id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, at: Date.now(), level: p.level ?? "info", message: p.message! },
+            ...s.logs,
+          ].slice(0, 80),
+        }));
+        return;
+      }
+      log(p.level ?? "info", p.message);
     }));
     subs.push(bridge.addBackgroundListener("discdjDone", () => {
       backgroundRunRef.current = false;
@@ -952,6 +970,7 @@ export function useDiscDJRobot() {
                   log("info", `Variante ${idx} : « ${shown} » → BPM ${bpm}`);
                 }
               },
+              (message) => log("info", message),
             );
             if (runIdRef.current !== runId) return;
 
@@ -991,6 +1010,7 @@ export function useDiscDJRobot() {
             } else {
               missing.push({ index: i + 1, name: track.name });
               const reason = robust.reason ?? robust.reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
+              const diagnosticImage = robust.reading.ocrInputImage ?? robust.reading.croppedImage ?? null;
               appendJournal(fingerprint, {
                 kind: "track",
                 ts: Date.now(),
@@ -1001,7 +1021,15 @@ export function useDiscDJRobot() {
                 durationMs: Date.now() - stepStart,
                 attempts: robust.attempts,
                 message: reason,
+                diagnosticImage,
+                diagnosticLabel: diagnosticImage ? `Capture OCR — ${track.name}` : null,
               });
+              if (diagnosticImage) {
+                appendRobotAction(fingerprint, "warning", `${progress} Capture OCR enregistrée pour vérifier visuellement la zone BPM.`, {
+                  diagnosticImage,
+                  diagnosticLabel: `Image réellement transmise à l'OCR — platine ${deck}`,
+                });
+              }
               log("warning", `${progress} BPM illisible pour « ${track.name} » — marqué à réanalyser.`);
               const snap = snapshot ?? { v: 1 as const, name: p.name, tracks: {} };
               snapshot = {
@@ -1773,26 +1801,35 @@ function correctOcrDigits(s: string): string {
  * 1. Digits after a "BPM" label (strongest signal).
  * 2. Any 2-3 digit cluster in range — prefer 3-digit so "150" beats "50".
  */
-function extractBpmFromVariant(text: string): { bpm: number | null; corrected: string } {
-  if (!text) return { bpm: null, corrected: "" };
+function extractBpmFromVariant(text: string): { bpm: number | null; corrected: string; reason: string | null } {
+  if (!text) return { bpm: null, corrected: "", reason: "aucun texte détecté" };
   const corrected = correctOcrDigits(text);
   const labelled = corrected.match(/BPM[^0-9]{0,8}(\d{2,3})/i);
   if (labelled) {
     const v = Number(labelled[1]);
-    if (v >= 40 && v <= 240) return { bpm: v, corrected };
+    if (v >= 40 && v <= 240) return { bpm: v, corrected, reason: null };
+    return { bpm: null, corrected, reason: `valeur étiquetée hors plage (${v})` };
+  }
+  const alphaCount = (corrected.match(/\p{L}/gu) ?? []).length;
+  const digitCount = (corrected.match(/\d/g) ?? []).length;
+  const numericLike = digitCount > 0 && alphaCount <= 3;
+  if (!numericLike) {
+    return { bpm: null, corrected, reason: "texte non numérique sans libellé BPM — probable mauvaise zone" };
   }
   const clusters = Array.from(corrected.matchAll(/\d{2,3}/g))
     .map((m) => Number(m[0]))
     .filter((n) => n >= 40 && n <= 240);
-  if (clusters.length === 0) return { bpm: null, corrected };
+  if (clusters.length === 0) return { bpm: null, corrected, reason: "aucun nombre valide entre 40 et 240" };
   const three = clusters.filter((n) => n >= 100);
-  return { bpm: three[0] ?? clusters[0], corrected };
+  return { bpm: three[0] ?? clusters[0], corrected, reason: null };
 }
 
 function collectVariants(reading: DiscDJReading): string[] {
   const list: string[] = [];
-  if (reading.raw) list.push(reading.raw);
   if (reading.zoneTexts) list.push(...reading.zoneTexts);
+  // Use raw only as fallback: the native path must not concatenate OCR
+  // variants into a single parse string.
+  if (list.length === 0 && reading.raw) list.push(reading.raw);
   // Dedup while keeping order.
   const seen = new Set<string>();
   return list.filter((v) => {
@@ -1829,6 +1866,7 @@ async function readBpmRobust(
   _previousBpm: number | null,
   stillRunning: () => boolean,
   logVariant?: (index: number, raw: string, corrected: string, bpm: number | null) => void,
+  logDiagnostic?: (message: string) => void,
 ): Promise<{ bpm: number | null; reading: DiscDJReading; attempts: number; reason?: string }> {
   const votes = new Map<number, number>();
   const perAttemptWinners: number[] = [];
@@ -1846,12 +1884,16 @@ async function readBpmRobust(
     }
     if (last.endOfPlaylist) return { bpm: null, reading: last, attempts: attempt };
 
+    logDiagnostic?.(formatBpmCaptureDiagnostic(deck, bpmZone, last, attempt));
+
     const variants = collectVariants(last);
+    if (variants.length === 0) logDiagnostic?.(`Tentative ${attempt} : rejet — aucun texte OCR détecté dans la zone BPM.`);
     const attemptVotes = new Map<number, number>();
     for (const v of variants) {
       variantIndex++;
-      const { bpm, corrected } = extractBpmFromVariant(v);
+      const { bpm, corrected, reason } = extractBpmFromVariant(v);
       logVariant?.(variantIndex, v, corrected, bpm);
+      if (bpm == null && reason) logDiagnostic?.(`Variante ${variantIndex} rejetée : ${reason}.`);
       if (bpm != null) {
         attemptVotes.set(bpm, (attemptVotes.get(bpm) ?? 0) + 1);
         votes.set(bpm, (votes.get(bpm) ?? 0) + 1);
@@ -1903,6 +1945,22 @@ async function readBpmRobust(
     attempts: attempt,
     reason: last.parseReason ?? "BPM illisible après toutes les corrections OCR",
   };
+}
+
+function formatBpmCaptureDiagnostic(
+  deck: DeckId,
+  bpmZone: CalibrationRect,
+  reading: DiscDJReading,
+  attempt: number,
+): string {
+  const rect = reading.ocrRect;
+  const display = reading.display;
+  const calibrated = `zone calibrée x=${bpmZone.x.toFixed(4)} y=${bpmZone.y.toFixed(4)} w=${bpmZone.width.toFixed(4)} h=${bpmZone.height.toFixed(4)}`;
+  const realRect = rect
+    ? `rect OCR ${rect.left},${rect.top} · ${rect.width}×${rect.height}px`
+    : "rect OCR indisponible";
+  const screen = display ? `écran ${display.width}×${display.height}px` : "résolution écran inconnue";
+  return `Diagnostic BPM tentative ${attempt} — platine ${deck} · ${calibrated} · ${realRect} · ${screen}.`;
 }
 
 /**

@@ -362,7 +362,7 @@ public class DiscDJAccessibilityService extends AccessibilityService {
                 // OCR'd and their outputs merged, then voted on.
                 final List<Bitmap> variants = prepareOcrVariants(cropped);
                 if (variants.isEmpty()) variants.add(cropped);
-                result.ocrInputDataUrl = bitmapDataUrl(variants.get(0), Bitmap.CompressFormat.PNG, 100);
+                result.ocrInputDataUrl = bitmapDataUrl(buildVariantSheet(variants), Bitmap.CompressFormat.PNG, 100);
 
                 final List<String> allTexts = new ArrayList<>();
                 final int[] remaining = new int[] { variants.size() };
@@ -408,16 +408,17 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             if (!uniq.contains(t)) uniq.add(t);
         }
         result.zoneTexts.addAll(uniq);
-        result.raw = join(uniq);
-        if (containsBadSourceText(result.raw)) {
+        result.raw = uniq.isEmpty() ? "" : uniq.get(0);
+        String allTextForSafety = join(uniq);
+        if (containsBadSourceText(allTextForSafety)) {
             result.sourceOk = false;
             result.parseReason = "Mauvaise source d'image capturée : le texte OCR contient des éléments de MixOrder ou d'un overlay.";
         } else {
             result.bpm = parseBestBpm(uniq);
             if (result.bpm == null) {
-                result.parseReason = result.raw == null || result.raw.isEmpty()
+                result.parseReason = uniq.isEmpty()
                         ? "OCR vide dans le rectangle BPM calibré (toutes variantes de prétraitement)."
-                        : "Texte OCR lu sur " + uniq.size() + " variantes, mais aucun BPM valide entre 40 et 240.";
+                        : "Texte OCR lu sur " + uniq.size() + " variantes séparées, mais aucun BPM valide entre 40 et 240.";
             }
         }
         cb.onResult(result);
@@ -529,6 +530,29 @@ public class DiscDJAccessibilityService extends AccessibilityService {
         return out;
     }
 
+    private static Bitmap buildVariantSheet(List<Bitmap> variants) {
+        if (variants == null || variants.isEmpty()) return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+        int width = 0;
+        int height = 0;
+        for (Bitmap b : variants) {
+            if (b == null) continue;
+            width = Math.max(width, b.getWidth());
+            height += b.getHeight();
+        }
+        width = Math.max(1, width);
+        height = Math.max(1, height);
+        Bitmap sheet = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(sheet);
+        c.drawColor(Color.WHITE);
+        int y = 0;
+        for (Bitmap b : variants) {
+            if (b == null) continue;
+            c.drawBitmap(b, 0, y, null);
+            y += b.getHeight();
+        }
+        return sheet;
+    }
+
     private static Bitmap binarize(int[] src, int[] lum, int avg, int margin, int w, int h, boolean brightTextOnDark) {
         int[] px = new int[src.length];
         for (int i = 0; i < src.length; i++) {
@@ -582,7 +606,9 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             if (t == null) continue;
             String normalized = normalizeOcrDigits(t);
             boolean cleanNumeric = normalized.matches("\\s*(?:bpm\\s*[:：]?)?\\s*\\d{2,3}(?:[.,]\\d+)?\\s*");
-            Matcher lm = BPM_LABELED_PATTERN.matcher(t);
+            int alphaCount = countLetters(normalized);
+            String labelSource = normalized.replaceAll("(?i)8PM", "BPM");
+            Matcher lm = BPM_LABELED_PATTERN.matcher(labelSource);
             while (lm.find()) {
                 Double v = tryParseBpm(lm.group(1));
                 if (v != null) {
@@ -595,8 +621,9 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             while (m2.find()) {
                 Double v = tryParseBpm(m2.group(1));
                 if (v != null) {
+                    if (!cleanNumeric && !looksLikeBpmText(normalized) && alphaCount > 3) continue;
                     int k = (int) Math.round(v);
-                    int weight = looksLikeBpmText(t) ? 3 : 1;
+                    int weight = looksLikeBpmText(normalized) ? 3 : 1;
                     if (cleanNumeric) weight += 3;
                     if (k >= 100) weight += 1;
                     votes.merge(k, weight, Integer::sum);
@@ -632,6 +659,20 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             if (bestClean <= runnerClean && bestScore < runnerScore + 3) return null;
         }
         return bestKey >= 40 && bestKey <= 240 ? (double) bestKey : null;
+    }
+
+    public static Double parseSingleBpmVariant(String text) {
+        if (text == null || text.trim().isEmpty()) return null;
+        java.util.List<String> one = new java.util.ArrayList<>();
+        one.add(text);
+        return parseBestBpm(one);
+    }
+
+    private static int countLetters(String s) {
+        if (s == null) return 0;
+        int c = 0;
+        for (int i = 0; i < s.length(); i++) if (Character.isLetter(s.charAt(i))) c++;
+        return c;
     }
 
     private static String normalizeOcrDigits(String input) {

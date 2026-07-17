@@ -264,6 +264,19 @@ export function AnalysisTab() {
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-foreground/90">{entry.message ?? entry.name ?? "Action Robot"}</p>
                   {entry.name && entry.kind !== "action" && <p className="truncate text-[10px] text-muted-foreground">{entry.name}</p>}
+                  {entry.diagnosticImage && (
+                    <div className="mt-2 overflow-hidden rounded-md border border-border/70 bg-background/70">
+                      <p className="px-2 py-1 text-[10px] text-muted-foreground">
+                        {entry.diagnosticLabel ?? "Capture OCR enregistrée"}
+                      </p>
+                      <img
+                        src={entry.diagnosticImage}
+                        alt={entry.diagnosticLabel ?? "Capture OCR réellement analysée"}
+                        className="max-h-40 w-full object-contain"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
                 </div>
                 <span className="shrink-0 text-muted-foreground tabular-nums">
                   {new Date(entry.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}

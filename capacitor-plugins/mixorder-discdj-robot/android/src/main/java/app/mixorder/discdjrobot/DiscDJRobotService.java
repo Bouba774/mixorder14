@@ -297,14 +297,15 @@ public class DiscDJRobotService extends Service {
         if (svc == null) { scheduleTick(500); return; }
         Rect crop = rectFromJson(svc, bpmZone);
         if (crop == null) { emitLog("error", "Zone BPM invalide."); skipAndAdvance(); return; }
-        final Double nodeBpm = nodeBpmForCrop(svc, crop);
         final int attemptFinal = attempt;
-        emitLog("info", "Lecture du BPM.");
+        emitLog("info", "Lecture du BPM platine " + deck + " — " + describeRect(crop, svc) + ".");
         final int bpmWatchdog = armTimeout("Lecture du BPM", Math.max(8000, waitBeforeReadMs + 5000));
         main.postDelayed(() -> svc.readBpmFromScreenshot(crop, discdjPackage, result -> {
             disarmTimeout(bpmWatchdog);
-            Double parsedBpm = nodeBpm != null ? nodeBpm : result.bpm;
+            logBpmOcrDiagnostics(result);
+            Double parsedBpm = result.bpm;
             if (parsedBpm == null) {
+                emitLogWithImage("warning", "Capture OCR enregistrée après échec BPM : " + result.parseReason, result.ocrInputDataUrl, "Image réellement transmise à l'OCR — platine " + deck);
                 retryNameCheckedStep(attemptFinal, "BPM illisible : " + result.parseReason);
                 return;
             }
@@ -436,10 +437,11 @@ public class DiscDJRobotService extends Service {
             skipAndAdvance();
             return;
         }
-        final Double nodeBpm = nodeBpmForCrop(svc, crop);
         final int attemptFinal = attempt;
+        emitLog("info", "Lecture du BPM platine " + deck + " — " + describeRect(crop, svc) + ".");
         svc.readBpmFromScreenshot(crop, discdjPackage, result -> {
-            Double parsedBpm = nodeBpm != null ? nodeBpm : result.bpm;
+            logBpmOcrDiagnostics(result);
+            Double parsedBpm = result.bpm;
             if (parsedBpm != null) {
                 lastBpm = parsedBpm;
                 TrackItem t = tracks.get(index);
@@ -460,6 +462,7 @@ public class DiscDJRobotService extends Service {
                 main.postDelayed(() -> readOnce(attemptFinal + 1), 500);
             } else {
                 emitLog("warning", "BPM illisible pour le morceau " + (index + 1) + " : " + result.parseReason);
+                emitLogWithImage("warning", "Capture OCR enregistrée après échec BPM : " + result.parseReason, result.ocrInputDataUrl, "Image réellement transmise à l'OCR — platine " + deck);
                 skipAndAdvance();
             }
         });
@@ -524,18 +527,32 @@ public class DiscDJRobotService extends Service {
         svc.tapAt(xy[0], xy[1], pressDurationMs, (ok, reason) -> cb.done(ok));
     }
 
-    private Double nodeBpmForCrop(DiscDJAccessibilityService svc, Rect crop) {
-        try {
-            DiscDJAccessibilityService.ScanResult scan = svc.scanDiscDJWindow(discdjPackage);
-            List<String> texts = new ArrayList<>();
-            for (DiscDJAccessibilityService.TextHit h : scan.allText) {
-                if (h == null || h.text == null || h.bounds == null) continue;
-                if (crop.contains(h.bounds.centerX(), h.bounds.centerY())) texts.add(h.text);
-            }
-            return DiscDJAccessibilityService.parseBestBpm(texts);
-        } catch (Exception ignored) {
-            return null;
+    private String describeRect(Rect crop, DiscDJAccessibilityService svc) {
+        int[] size = svc != null ? svc.getDisplaySize() : new int[] { 0, 0 };
+        return "coordonnées " + crop.left + "," + crop.top + " → " + crop.right + "," + crop.bottom
+                + " · rectangle " + crop.width() + "×" + crop.height() + "px · écran " + size[0] + "×" + size[1] + "px";
+    }
+
+    private void logBpmOcrDiagnostics(DiscDJAccessibilityService.OcrResult result) {
+        if (result == null) return;
+        Rect r = result.cropRect != null ? result.cropRect : new Rect();
+        emitLog("info", "Diagnostic BPM — platine " + deck + " · rect OCR " + r.left + "," + r.top + " · " + r.width() + "×" + r.height() + "px · écran " + result.displayWidth + "×" + result.displayHeight + "px.");
+        if (result.zoneTexts == null || result.zoneTexts.isEmpty()) {
+            emitLog("info", "Diagnostic BPM — rejet : aucun texte OCR détecté.");
+            return;
         }
+        int i = 1;
+        for (String text : result.zoneTexts) {
+            Double v = DiscDJAccessibilityService.parseSingleBpmVariant(text);
+            emitLog("info", "Variante OCR " + i + " : « " + preview(text) + " » → " + (v == null ? "rejetée" : "BPM " + Math.round(v)) + ".");
+            i++;
+        }
+    }
+
+    private static String preview(String text) {
+        if (text == null) return "∅";
+        String s = text.replaceAll("\\s+", " ").trim();
+        return s.length() > 70 ? s.substring(0, 70) + "…" : s;
     }
 
     private void returnToMainThen(TapDone cb) {
@@ -828,6 +845,15 @@ public class DiscDJRobotService extends Service {
     private void emitLog(String level, String message) {
         try {
             emit("discdjLog", new JSONObject().put("level", level).put("message", message));
+        } catch (JSONException ignored) {}
+    }
+
+    private void emitLogWithImage(String level, String message, String diagnosticImage, String diagnosticLabel) {
+        try {
+            JSONObject o = new JSONObject().put("level", level).put("message", message);
+            if (diagnosticImage != null && !diagnosticImage.isEmpty()) o.put("diagnosticImage", diagnosticImage);
+            if (diagnosticLabel != null) o.put("diagnosticLabel", diagnosticLabel);
+            emit("discdjLog", o);
         } catch (JSONException ignored) {}
     }
 
