@@ -129,38 +129,58 @@ export function RenameTab() {
 
   // -------- progress --------
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [report, setReport] = useState<{
+    renamed: number;
+    skipped: number;
+    errors: Array<{ before: string; after: string; reason: string }>;
+    durationMs: number;
+  } | null>(null);
 
   if (!project) return null;
+
+  const { renameManyFiles } = useWorkspaceRename();
 
   const applyPlan = async () => {
     if (!plan.safe || plan.totalChanged === 0) return;
     setProgress({ done: 0, total: plan.totalChanged });
+    setReport(null);
     const changed = plan.entries.filter((e) => e.changed);
-    const batchEntries: Array<{ trackId: string; before: string; after: string }> = [];
-    for (let i = 0; i < changed.length; i++) {
-      const e = changed[i];
-      renameTrack(e.trackId, e.after);
-      batchEntries.push({ trackId: e.trackId, before: e.before, after: e.after });
-      // Yield to the browser so the progress bar updates smoothly.
-      if (i % 25 === 0) await new Promise((r) => setTimeout(r, 0));
-      setProgress({ done: i + 1, total: changed.length });
-    }
-    if (fingerprint) {
+    const res = await renameManyFiles(
+      changed.map((e) => ({ id: e.trackId, nextBaseName: e.after })),
+      (done, total) => setProgress({ done, total }),
+    );
+    if (fingerprint && res.applied.length > 0) {
       const batch = pushBatch(fingerprint, {
         template: cleanupOnly ? "Nettoyage préfixes" : currentPattern,
-        count: batchEntries.length,
-        entries: batchEntries,
+        count: res.applied.length,
+        entries: res.applied,
       });
       setHistory((h) => [batch, ...h]);
     }
+    setReport({
+      renamed: res.renamed,
+      skipped: res.skipped,
+      errors: res.errors.map((e) => ({
+        before: e.before,
+        after: e.after,
+        reason: e.reason,
+      })),
+      durationMs: res.durationMs,
+    });
     setProgress(null);
-    setStep("template");
   };
 
-  const undoBatch = (batch: RenameBatch) => {
-    for (const e of batch.entries) {
-      renameTrack(e.trackId, e.before);
-    }
+  const undoBatch = async (batch: RenameBatch) => {
+    // Physically rename back. Entries store originalName (base + ext) as
+    // `before`/`after`; strip the extension so `renameManyFiles` receives
+    // the display base only.
+    const stripExt = (n: string) => {
+      const i = n.lastIndexOf(".");
+      return i > 0 ? n.slice(0, i) : n;
+    };
+    await renameManyFiles(
+      batch.entries.map((e) => ({ id: e.trackId, nextBaseName: stripExt(e.before) })),
+    );
     if (fingerprint) {
       markBatchReverted(fingerprint, batch.id);
       setHistory(loadHistory(fingerprint).batches);
