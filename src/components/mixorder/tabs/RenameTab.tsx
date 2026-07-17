@@ -55,7 +55,7 @@ type Step = "template" | "preview" | "confirm";
  */
 
 export function RenameTab() {
-  const { project, renameTrack } = useWorkspace();
+  const { project, renameManyFiles } = useWorkspace();
   const {
     sortField, setSortField,
     sortDir, setSortDir,
@@ -129,38 +129,58 @@ export function RenameTab() {
 
   // -------- progress --------
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [report, setReport] = useState<{
+    renamed: number;
+    skipped: number;
+    errors: Array<{ before: string; after: string; reason: string }>;
+    durationMs: number;
+  } | null>(null);
 
   if (!project) return null;
+
+  
 
   const applyPlan = async () => {
     if (!plan.safe || plan.totalChanged === 0) return;
     setProgress({ done: 0, total: plan.totalChanged });
+    setReport(null);
     const changed = plan.entries.filter((e) => e.changed);
-    const batchEntries: Array<{ trackId: string; before: string; after: string }> = [];
-    for (let i = 0; i < changed.length; i++) {
-      const e = changed[i];
-      renameTrack(e.trackId, e.after);
-      batchEntries.push({ trackId: e.trackId, before: e.before, after: e.after });
-      // Yield to the browser so the progress bar updates smoothly.
-      if (i % 25 === 0) await new Promise((r) => setTimeout(r, 0));
-      setProgress({ done: i + 1, total: changed.length });
-    }
-    if (fingerprint) {
+    const res = await renameManyFiles(
+      changed.map((e) => ({ id: e.trackId, nextBaseName: e.after })),
+      (done, total) => setProgress({ done, total }),
+    );
+    if (fingerprint && res.applied.length > 0) {
       const batch = pushBatch(fingerprint, {
         template: cleanupOnly ? "Nettoyage préfixes" : currentPattern,
-        count: batchEntries.length,
-        entries: batchEntries,
+        count: res.applied.length,
+        entries: res.applied,
       });
       setHistory((h) => [batch, ...h]);
     }
+    setReport({
+      renamed: res.renamed,
+      skipped: res.skipped,
+      errors: res.errors.map((e) => ({
+        before: e.before,
+        after: e.after,
+        reason: e.reason,
+      })),
+      durationMs: res.durationMs,
+    });
     setProgress(null);
-    setStep("template");
   };
 
-  const undoBatch = (batch: RenameBatch) => {
-    for (const e of batch.entries) {
-      renameTrack(e.trackId, e.before);
-    }
+  const undoBatch = async (batch: RenameBatch) => {
+    // Physically rename back. Entries store originalName (base + ext) as
+    // `before`/`after`; strip the extension so `renameManyFiles` receives
+    // the display base only.
+    const stripExt = (n: string) => {
+      const i = n.lastIndexOf(".");
+      return i > 0 ? n.slice(0, i) : n;
+    };
+    await renameManyFiles(
+      batch.entries.map((e) => ({ id: e.trackId, nextBaseName: stripExt(e.before) })),
+    );
     if (fingerprint) {
       markBatchReverted(fingerprint, batch.id);
       setHistory(loadHistory(fingerprint).batches);
@@ -252,6 +272,51 @@ export function RenameTab() {
             cleanupOnly ? "Nettoyage préfixes" : currentPattern
           }
         />
+      )}
+
+      {/* Final report — persists until the user starts a new rename. */}
+      {report && !progress && (
+        <section className="space-y-2 rounded-xl border border-border bg-surface p-3">
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4 text-primary" />
+            <p className="text-sm font-semibold">Rapport de renommage</p>
+            <button
+              onClick={() => setReport(null)}
+              className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              Fermer
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-2 text-[11px]">
+            <Stat label="Renommés" value={String(report.renamed)} />
+            <Stat label="Ignorés" value={String(report.skipped)} />
+            <Stat
+              label="Erreurs"
+              value={String(report.errors.length)}
+              tone={report.errors.length ? "warn" : "ok"}
+            />
+            <Stat
+              label="Durée"
+              value={
+                report.durationMs < 1000
+                  ? `${report.durationMs} ms`
+                  : `${(report.durationMs / 1000).toFixed(1)} s`
+              }
+            />
+          </div>
+          {report.errors.length > 0 && (
+            <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[10px]">
+              {report.errors.map((e, i) => (
+                <li key={i}>
+                  <p className="truncate font-medium text-destructive">
+                    {e.before} → {e.after}
+                  </p>
+                  <p className="text-muted-foreground">{e.reason}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       {/* History */}
