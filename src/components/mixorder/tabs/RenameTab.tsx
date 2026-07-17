@@ -55,7 +55,7 @@ type Step = "template" | "preview" | "confirm";
  */
 
 export function RenameTab() {
-  const { project, renameTrack } = useWorkspace();
+  const { project, renameManyFiles } = useWorkspace();
   const {
     sortField, setSortField,
     sortDir, setSortDir,
