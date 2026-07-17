@@ -50,6 +50,59 @@ public class FolderPickerPlugin extends Plugin {
         }
     }
 
+    /**
+     * Physically rename a SAF document (file on disk). Requires that the URI
+     * belongs to a tree previously granted via `pickFolder()`. Preserves the
+     * file bytes and location — only the display name changes. The new URI
+     * returned by the SAF provider must be used from now on (documentId
+     * usually changes with the rename).
+     */
+    @PluginMethod
+    public void renameFile(PluginCall call) {
+        String uriString = call.getString("uri");
+        String newName = call.getString("newName");
+        if (uriString == null || uriString.isEmpty()
+                || newName == null || newName.isEmpty()) {
+            call.reject("missing args");
+            return;
+        }
+        try {
+            Uri uri = Uri.parse(uriString);
+            Uri newUri = DocumentsContract.renameDocument(
+                getContext().getContentResolver(),
+                uri,
+                newName
+            );
+            if (newUri == null) {
+                call.reject("rename failed");
+                return;
+            }
+            String displayName = queryDisplayNameByUri(newUri);
+            JSObject ret = new JSObject();
+            ret.put("uri", newUri.toString());
+            ret.put("name", displayName != null ? displayName : newName);
+            call.resolve(ret);
+        } catch (Exception ex) {
+            call.reject("rename error: " + ex.getMessage());
+        }
+    }
+
+    private String queryDisplayNameByUri(Uri docUri) {
+        Cursor c = null;
+        try {
+            c = getContext().getContentResolver().query(
+                docUri,
+                new String[]{ DocumentsContract.Document.COLUMN_DISPLAY_NAME },
+                null, null, null
+            );
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Exception ignored) {
+        } finally {
+            if (c != null) c.close();
+        }
+        return null;
+    }
+
     @ActivityCallback
     private void pickFolderResult(PluginCall call, ActivityResult result) {
         if (call == null) return;
