@@ -530,6 +530,29 @@ public class DiscDJAccessibilityService extends AccessibilityService {
         return out;
     }
 
+    private static Bitmap buildVariantSheet(List<Bitmap> variants) {
+        if (variants == null || variants.isEmpty()) return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+        int width = 0;
+        int height = 0;
+        for (Bitmap b : variants) {
+            if (b == null) continue;
+            width = Math.max(width, b.getWidth());
+            height += b.getHeight();
+        }
+        width = Math.max(1, width);
+        height = Math.max(1, height);
+        Bitmap sheet = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(sheet);
+        c.drawColor(Color.WHITE);
+        int y = 0;
+        for (Bitmap b : variants) {
+            if (b == null) continue;
+            c.drawBitmap(b, 0, y, null);
+            y += b.getHeight();
+        }
+        return sheet;
+    }
+
     private static Bitmap binarize(int[] src, int[] lum, int avg, int margin, int w, int h, boolean brightTextOnDark) {
         int[] px = new int[src.length];
         for (int i = 0; i < src.length; i++) {
