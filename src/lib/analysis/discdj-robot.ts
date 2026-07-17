@@ -1740,49 +1740,75 @@ async function readBpmOnce(
 }
 
 /**
- * Robust BPM parser applied to the raw OCR text of the BPM zone.
- * Tries multiple heuristics in order:
- *  1. Digits following a "BPM" label (strongest signal).
- *  2. Any 2-3 digit cluster falling in [40, 240].
- * Fixes OCR confusions (O↔0, l/I↔1, S↔5, B↔8) and prefers 3-digit values
- * so a dropped leading digit (150 → 50) doesn't win over a full read.
+ * Fix the most common OCR digit/letter confusions.
+ *
+ * Applied to each variant string independently — never to a concatenation
+ * of variants (that would let one bad glyph spread across the whole batch).
  */
-function parseBpmRobust(reading: DiscDJReading): number | null {
-  const parts: string[] = [];
-  if (reading.raw) parts.push(reading.raw);
-  if (reading.zoneTexts) parts.push(...reading.zoneTexts);
-  if (parts.length === 0) return null;
-  const cleaned = parts
-    .join(" ")
+function correctOcrDigits(s: string): string {
+  return s
+    .replace(/l/g, "1")
+    .replace(/I/g, "1")
+    .replace(/\|/g, "1")
     .replace(/[Oo]/g, "0")
-    .replace(/[lI|]/g, "1")
+    .replace(/[Zz](?=\d)|(?<=\d)[Zz]/g, "2")
     .replace(/S(?=\d)|(?<=\d)S/g, "5")
+    .replace(/[Gg](?=\d)|(?<=\d)[Gg]/g, "9")
+    .replace(/[Qq](?=\d)|(?<=\d)[Qq]/g, "9")
     .replace(/B(?=\d)|(?<=\d)B/g, "8");
-  // 1. After "BPM" — accept a few non-digits between (":", space, ".")
-  const labelled = cleaned.match(/BPM[^0-9]{0,8}(\d{2,3})/i);
+}
+
+/**
+ * Extract a BPM (40..240) from a single OCR variant.
+ * 1. Digits after a "BPM" label (strongest signal).
+ * 2. Any 2-3 digit cluster in range — prefer 3-digit so "150" beats "50".
+ */
+function extractBpmFromVariant(text: string): { bpm: number | null; corrected: string } {
+  if (!text) return { bpm: null, corrected: "" };
+  const corrected = correctOcrDigits(text);
+  const labelled = corrected.match(/BPM[^0-9]{0,8}(\d{2,3})/i);
   if (labelled) {
     const v = Number(labelled[1]);
-    if (v >= 40 && v <= 240) return Math.round(v);
+    if (v >= 40 && v <= 240) return { bpm: v, corrected };
   }
-  // 2. Fallback: gather all 2-3 digit clusters and pick the best in-range.
-  const clusters = Array.from(cleaned.matchAll(/\d{2,3}/g))
+  const clusters = Array.from(corrected.matchAll(/\d{2,3}/g))
     .map((m) => Number(m[0]))
     .filter((n) => n >= 40 && n <= 240);
-  if (clusters.length === 0) return null;
+  if (clusters.length === 0) return { bpm: null, corrected };
   const three = clusters.filter((n) => n >= 100);
-  return three[0] ?? clusters[0];
+  return { bpm: three[0] ?? clusters[0], corrected };
+}
+
+function collectVariants(reading: DiscDJReading): string[] {
+  const list: string[] = [];
+  if (reading.raw) list.push(reading.raw);
+  if (reading.zoneTexts) list.push(...reading.zoneTexts);
+  // Dedup while keeping order.
+  const seen = new Set<string>();
+  return list.filter((v) => {
+    const key = v.trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
  * Robust BPM read used by the Ordre aligné mode.
  *
- * Performs up to `maxAttempts` OCR passes. On each pass we trust the native
- * parser if it produced a plausible value; otherwise we reparse the raw
- * OCR text with `parseBpmRobust`. Returns as soon as:
- *  - two attempts agree on the same value, OR
- *  - after ≥2 attempts we have a value that clearly differs from
- *    `previousBpm` (meaning the deck already loaded a new track).
- * Falls back to the most-voted plausible value across all attempts.
+ * Each attempt performs a fresh OCR pass, then every returned variant is
+ * corrected and parsed *independently* (no concatenation). Variants and
+ * corrections are pushed through `logVariant` so the journal shows the
+ * full trace, e.g. `Variante 3 : BPM:l27 → BPM:127 (127)`.
+ *
+ * Decision rules:
+ *  - Any BPM value that appears at least twice across all variants wins
+ *    immediately (majority vote, tolerant to a single-letter OCR slip).
+ *  - Two consecutive attempts agreeing on the same value = confirmed
+ *    (stability check — filters captures made during track change).
+ *  - Otherwise the highest-vote value across attempts wins.
+ *  - Only when NO variant of ANY attempt yields a valid 40..240 value
+ *    do we return `bpm = null` with a "BPM illisible" reason.
  */
 async function readBpmRobust(
   bridge: DiscDJBridge,
@@ -1790,12 +1816,16 @@ async function readBpmRobust(
   bpmZone: CalibrationRect,
   settings: DiscDJRobotSettings,
   maxAttempts: number,
-  previousBpm: number | null,
+  _previousBpm: number | null,
   stillRunning: () => boolean,
+  logVariant?: (index: number, raw: string, corrected: string, bpm: number | null) => void,
 ): Promise<{ bpm: number | null; reading: DiscDJReading; attempts: number; reason?: string }> {
-  const counts = new Map<number, number>();
+  const votes = new Map<number, number>();
+  const perAttemptWinners: number[] = [];
   let last: DiscDJReading = { bpm: null, title: null, durationSec: null };
   let attempt = 0;
+  let variantIndex = 0;
+
   for (attempt = 1; attempt <= maxAttempts; attempt++) {
     if (!stillRunning()) break;
     try {
@@ -1806,29 +1836,63 @@ async function readBpmRobust(
     }
     if (last.endOfPlaylist) return { bpm: null, reading: last, attempts: attempt };
 
-    const val: number | null = isPlausibleBpm(last.bpm) ? Math.round(last.bpm) : parseBpmRobust(last);
-    if (val != null && val >= 40 && val <= 240) {
-      counts.set(val, (counts.get(val) ?? 0) + 1);
-      const cnt = counts.get(val) ?? 0;
-      if (cnt >= 2) return { bpm: val, reading: last, attempts: attempt };
-      if (attempt >= 2 && (previousBpm == null || val !== previousBpm)) {
-        return { bpm: val, reading: last, attempts: attempt };
+    const variants = collectVariants(last);
+    const attemptVotes = new Map<number, number>();
+    for (const v of variants) {
+      variantIndex++;
+      const { bpm, corrected } = extractBpmFromVariant(v);
+      logVariant?.(variantIndex, v, corrected, bpm);
+      if (bpm != null) {
+        attemptVotes.set(bpm, (attemptVotes.get(bpm) ?? 0) + 1);
+        votes.set(bpm, (votes.get(bpm) ?? 0) + 1);
       }
     }
+    // Native parser fallback when the plugin already produced a value but
+    // handed back no textual variants (rare — mostly the simulated bridge).
+    if (attemptVotes.size === 0 && isPlausibleBpm(last.bpm)) {
+      const v = Math.round(last.bpm);
+      variantIndex++;
+      logVariant?.(variantIndex, `native:${v}`, `native:${v}`, v);
+      attemptVotes.set(v, 1);
+      votes.set(v, (votes.get(v) ?? 0) + 1);
+    }
+
+    // Per-attempt winner (breaks ties on first-seen).
+    let attemptWinner: number | null = null;
+    let attemptBest = 0;
+    for (const [v, c] of attemptVotes) {
+      if (c > attemptBest) { attemptBest = c; attemptWinner = v; }
+    }
+    if (attemptWinner != null) perAttemptWinners.push(attemptWinner);
+
+    // Stability check: two consecutive attempts agree → confirmed.
+    const n = perAttemptWinners.length;
+    if (n >= 2 && perAttemptWinners[n - 1] === perAttemptWinners[n - 2]) {
+      return { bpm: perAttemptWinners[n - 1], reading: last, attempts: attempt };
+    }
+    // Global majority (any variant vote reaching 2).
+    for (const [v, c] of votes) {
+      if (c >= 2) return { bpm: v, reading: last, attempts: attempt };
+    }
+
     if (attempt < maxAttempts) {
       await bgSleep(bridge, Math.max(200, Math.round(settings.waitBeforeReadMs / 3)));
     }
   }
+
+  // Fallback: highest-vote value across all attempts, even with a single vote.
   let bestVal: number | null = null;
   let bestC = 0;
-  for (const [v, c] of counts) {
-    if (c > bestC) {
-      bestVal = v;
-      bestC = c;
-    }
+  for (const [v, c] of votes) {
+    if (c > bestC) { bestC = c; bestVal = v; }
   }
-  if (bestVal != null && bestC >= 1) return { bpm: bestVal, reading: last, attempts: attempt };
-  return { bpm: null, reading: last, attempts: attempt, reason: last.parseReason ?? "BPM illisible" };
+  if (bestVal != null) return { bpm: bestVal, reading: last, attempts: attempt };
+  return {
+    bpm: null,
+    reading: last,
+    attempts: attempt,
+    reason: last.parseReason ?? "BPM illisible après toutes les corrections OCR",
+  };
 }
 
 /**
