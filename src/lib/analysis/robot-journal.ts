@@ -29,6 +29,9 @@ export interface JournalEntry {
   durationMs?: number;
   attempts?: number;
   message?: string;
+  /** Data URL of the exact OCR diagnostic image saved after a failed read. */
+  diagnosticImage?: string | null;
+  diagnosticLabel?: string | null;
 }
 
 function safeStorage(): Storage | null {
@@ -67,12 +70,15 @@ export function appendRobotAction(
   fingerprint: string,
   level: JournalLevel,
   message: string,
+  diagnostics?: { diagnosticImage?: string | null; diagnosticLabel?: string | null },
 ): JournalEntry[] {
   return appendJournal(fingerprint, {
     kind: "action",
     ts: Date.now(),
     level,
     message,
+    diagnosticImage: diagnostics?.diagnosticImage ?? null,
+    diagnosticLabel: diagnostics?.diagnosticLabel ?? null,
   });
 }
 
