@@ -362,7 +362,7 @@ public class DiscDJAccessibilityService extends AccessibilityService {
                 // OCR'd and their outputs merged, then voted on.
                 final List<Bitmap> variants = prepareOcrVariants(cropped);
                 if (variants.isEmpty()) variants.add(cropped);
-                result.ocrInputDataUrl = bitmapDataUrl(variants.get(0), Bitmap.CompressFormat.PNG, 100);
+                result.ocrInputDataUrl = bitmapDataUrl(buildVariantSheet(variants), Bitmap.CompressFormat.PNG, 100);
 
                 final List<String> allTexts = new ArrayList<>();
                 final int[] remaining = new int[] { variants.size() };
@@ -408,16 +408,17 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             if (!uniq.contains(t)) uniq.add(t);
         }
         result.zoneTexts.addAll(uniq);
-        result.raw = join(uniq);
-        if (containsBadSourceText(result.raw)) {
+        result.raw = uniq.isEmpty() ? "" : uniq.get(0);
+        String allTextForSafety = join(uniq);
+        if (containsBadSourceText(allTextForSafety)) {
             result.sourceOk = false;
             result.parseReason = "Mauvaise source d'image capturée : le texte OCR contient des éléments de MixOrder ou d'un overlay.";
         } else {
             result.bpm = parseBestBpm(uniq);
             if (result.bpm == null) {
-                result.parseReason = result.raw == null || result.raw.isEmpty()
+                result.parseReason = uniq.isEmpty()
                         ? "OCR vide dans le rectangle BPM calibré (toutes variantes de prétraitement)."
-                        : "Texte OCR lu sur " + uniq.size() + " variantes, mais aucun BPM valide entre 40 et 240.";
+                        : "Texte OCR lu sur " + uniq.size() + " variantes séparées, mais aucun BPM valide entre 40 et 240.";
             }
         }
         cb.onResult(result);
