@@ -107,12 +107,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/defcc5d2-d455-40ab-80b3-8c98f64fe035" },
     ],
     links: [
-      { rel: "preconnect", href: "https://api.fontshare.com" },
-      { rel: "preconnect", href: "https://cdn.fontshare.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=general-sans@400,500,600&display=swap",
-      },
       { rel: "stylesheet", href: appCss },
       { rel: "icon", type: "image/png", href: "/__l5e/assets-v1/23269b12-fbf4-40e8-bb1f-106be9ef07e5/mixorder-logo.png" },
       { rel: "shortcut icon", type: "image/png", href: "/__l5e/assets-v1/23269b12-fbf4-40e8-bb1f-106be9ef07e5/mixorder-logo.png" },
