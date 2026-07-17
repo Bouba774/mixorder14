@@ -942,6 +942,16 @@ export function useDiscDJRobot() {
               perTrackAttempts,
               previousBpm,
               () => runIdRef.current === runId,
+              (idx, raw, corrected, bpm) => {
+                const shown = raw.trim().slice(0, 48) || "∅";
+                if (bpm == null) {
+                  log("info", `Variante ${idx} : « ${shown} » → aucun BPM lisible`);
+                } else if (corrected.trim() !== raw.trim()) {
+                  log("info", `Variante ${idx} : « ${shown} » → corrigé « ${corrected.trim().slice(0, 48)} » → BPM ${bpm}`);
+                } else {
+                  log("info", `Variante ${idx} : « ${shown} » → BPM ${bpm}`);
+                }
+              },
             );
             if (runIdRef.current !== runId) return;
 
