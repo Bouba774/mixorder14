@@ -404,8 +404,26 @@ export function useDiscDJRobot() {
       }));
     }));
     subs.push(bridge.addBackgroundListener("discdjLog", (payload) => {
-      const p = payload as { level?: RobotLogLevel; message?: string };
-      if (p?.message) log(p.level ?? "info", p.message);
+      const p = payload as { level?: RobotLogLevel; message?: string; diagnosticImage?: string | null; diagnosticLabel?: string | null };
+      if (!p?.message) return;
+      if (p.diagnosticImage) {
+        const project = projectRef.current;
+        if (project) {
+          appendRobotAction(projectFingerprint(project), p.level ?? "info", p.message, {
+            diagnosticImage: p.diagnosticImage,
+            diagnosticLabel: p.diagnosticLabel ?? "Capture OCR réellement analysée",
+          });
+        }
+        setState((s) => ({
+          ...s,
+          logs: [
+            { id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, at: Date.now(), level: p.level ?? "info", message: p.message! },
+            ...s.logs,
+          ].slice(0, 80),
+        }));
+        return;
+      }
+      log(p.level ?? "info", p.message);
     }));
     subs.push(bridge.addBackgroundListener("discdjDone", () => {
       backgroundRunRef.current = false;
