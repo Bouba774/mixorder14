@@ -606,7 +606,8 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             if (t == null) continue;
             String normalized = normalizeOcrDigits(t);
             boolean cleanNumeric = normalized.matches("\\s*(?:bpm\\s*[:：]?)?\\s*\\d{2,3}(?:[.,]\\d+)?\\s*");
-            Matcher lm = BPM_LABELED_PATTERN.matcher(t);
+            int alphaCount = countLetters(normalized);
+            Matcher lm = BPM_LABELED_PATTERN.matcher(normalized);
             while (lm.find()) {
                 Double v = tryParseBpm(lm.group(1));
                 if (v != null) {
@@ -619,8 +620,9 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             while (m2.find()) {
                 Double v = tryParseBpm(m2.group(1));
                 if (v != null) {
+                    if (!cleanNumeric && !looksLikeBpmText(normalized) && alphaCount > 3) continue;
                     int k = (int) Math.round(v);
-                    int weight = looksLikeBpmText(t) ? 3 : 1;
+                    int weight = looksLikeBpmText(normalized) ? 3 : 1;
                     if (cleanNumeric) weight += 3;
                     if (k >= 100) weight += 1;
                     votes.merge(k, weight, Integer::sum);
@@ -656,6 +658,20 @@ public class DiscDJAccessibilityService extends AccessibilityService {
             if (bestClean <= runnerClean && bestScore < runnerScore + 3) return null;
         }
         return bestKey >= 40 && bestKey <= 240 ? (double) bestKey : null;
+    }
+
+    public static Double parseSingleBpmVariant(String text) {
+        if (text == null || text.trim().isEmpty()) return null;
+        java.util.List<String> one = new java.util.ArrayList<>();
+        one.add(text);
+        return parseBestBpm(one);
+    }
+
+    private static int countLetters(String s) {
+        if (s == null) return 0;
+        int c = 0;
+        for (int i = 0; i < s.length(); i++) if (Character.isLetter(s.charAt(i))) c++;
+        return c;
     }
 
     private static String normalizeOcrDigits(String input) {
