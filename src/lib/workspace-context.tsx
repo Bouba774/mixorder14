@@ -502,7 +502,201 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const toggleFavorite = useCallback<WorkspaceContextValue["toggleFavorite"]>(
+  /**
+   * Batch physical rename. See `WorkspaceContextValue.renameManyFiles`.
+   *
+   * Native (Capacitor): calls the FolderPicker SAF `renameDocument` API
+   * for every file, then applies a single React state update and rewrites
+   * the persistence layer (snapshot + manifest + recent libraries) so the
+   * new names propagate everywhere immediately.
+   *
+   * Web: no persistent file handle → falls back to display-only rename.
+   */
+  const renameManyFiles = useCallback<WorkspaceContextValue["renameManyFiles"]>(
+    async (entries, onProgress) => {
+      const started =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const report: RenameFilesReport = {
+        requested: entries.length,
+        renamed: 0,
+        skipped: 0,
+        errors: [],
+        durationMs: 0,
+        applied: [],
+      };
+      const current = projectRef.current;
+      if (!current || entries.length === 0) {
+        report.durationMs = Math.round(
+          (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+            started,
+        );
+        return report;
+      }
+
+      const native = Capacitor.isNativePlatform();
+      const trackById = new Map(current.tracks.map((t) => [t.id, t]));
+      const reserved = new Set(
+        current.tracks.map((t) => t.originalName.toLowerCase()),
+      );
+      const patches = new Map<TrackId, Partial<Track>>();
+      const oldPathByTrack = new Map<TrackId, string>();
+
+      for (let i = 0; i < entries.length; i++) {
+        onProgress?.(i, entries.length);
+        const { id, nextBaseName } = entries[i];
+        const t = trackById.get(id);
+        if (!t) {
+          report.skipped += 1;
+          continue;
+        }
+        const trimmed = (nextBaseName ?? "").trim();
+        if (!trimmed) {
+          report.skipped += 1;
+          continue;
+        }
+        const extPart = t.extension ? "." + t.extension : "";
+        // Conflict-safe candidate — never collide with another file that we
+        // already own (or that we've just renamed to during this batch).
+        reserved.delete(t.originalName.toLowerCase());
+        let candidate = trimmed + extPart;
+        let n = 2;
+        while (reserved.has(candidate.toLowerCase())) {
+          candidate = `${trimmed} (${n})${extPart}`;
+          n += 1;
+        }
+        if (candidate === t.originalName) {
+          reserved.add(t.originalName.toLowerCase());
+          report.skipped += 1;
+          continue;
+        }
+
+        let newPath = t.path;
+        let newUrl = t.url;
+        let effectiveFullName = candidate;
+        if (native) {
+          try {
+            const res = await FolderPicker.renameFile({
+              uri: t.path,
+              newName: candidate,
+            });
+            newPath = res.uri;
+            effectiveFullName = res.name || candidate;
+            newUrl = Capacitor.convertFileSrc(newPath);
+          } catch (e) {
+            reserved.add(t.originalName.toLowerCase());
+            report.errors.push({
+              id,
+              before: t.originalName,
+              after: candidate,
+              reason:
+                (e as { message?: string })?.message ??
+                "renommage refusé par le système",
+            });
+            continue;
+          }
+        }
+        reserved.add(effectiveFullName.toLowerCase());
+
+        const dot = effectiveFullName.lastIndexOf(".");
+        const newBaseDisplay =
+          dot > 0 ? effectiveFullName.slice(0, dot) : effectiveFullName;
+        const newExt =
+          dot > 0 ? effectiveFullName.slice(dot + 1).toLowerCase() : "";
+        const at = Date.now();
+        const histEntry = { from: t.name, to: newBaseDisplay, at };
+        patches.set(id, {
+          name: newBaseDisplay,
+          originalName: effectiveFullName,
+          path: newPath,
+          url: newUrl,
+          extension: newExt,
+          modifiedAt: at,
+          renameHistory: [...t.renameHistory, histEntry],
+        });
+        oldPathByTrack.set(id, t.path);
+        report.applied.push({
+          trackId: id,
+          before: t.originalName,
+          after: effectiveFullName,
+        });
+        report.renamed += 1;
+        // Yield to the browser every ~20 files so the UI stays responsive
+        // on very large libraries.
+        if (i % 20 === 19) await new Promise((r) => setTimeout(r, 0));
+      }
+      onProgress?.(entries.length, entries.length);
+
+      if (patches.size > 0) {
+        setProject((p) => {
+          if (!p) return p;
+          const nextTracks = p.tracks.map((t) => {
+            const patch = patches.get(t.id);
+            return patch ? { ...t, ...patch } : t;
+          });
+          const nextProject: Project = { ...p, tracks: nextTracks };
+          const oldFp = projectFingerprint(p);
+          const newFp = projectFingerprint(nextProject);
+          const oldSnap =
+            loadSnapshot(oldFp) ?? loadSnapshot(newFp);
+          const nextSnap: AnalysisSnapshot = oldSnap
+            ? { ...oldSnap, name: nextProject.name, tracks: { ...oldSnap.tracks } }
+            : { v: 1, name: nextProject.name, tracks: {} };
+          for (const t of p.tracks) {
+            const patch = patches.get(t.id);
+            if (!patch) continue;
+            const oldPath = oldPathByTrack.get(t.id) ?? t.path;
+            const newPath = patch.path ?? t.path;
+            const carried =
+              nextSnap.tracks[oldPath] ??
+              ({
+                bpm: t.bpm,
+                musicalKey: t.musicalKey,
+                updatedAt: patch.modifiedAt ?? Date.now(),
+                source: "manual-discdj" as BpmSourceId,
+                favorite: t.favorite,
+                addedAt: t.addedAt,
+              } as AnalysisSnapshot["tracks"][string]);
+            delete nextSnap.tracks[oldPath];
+            nextSnap.tracks[newPath] = {
+              ...carried,
+              displayName: patch.name ?? t.name,
+              renameHistory: patch.renameHistory ?? t.renameHistory,
+              modifiedAt: patch.modifiedAt ?? Date.now(),
+            };
+          }
+          saveSnapshot(newFp, nextSnap);
+          saveLibraryManifest(newFp, {
+            v: 1,
+            name: nextProject.name,
+            createdAt: nextProject.createdAt,
+            tracks: nextProject.tracks.map((t) => ({
+              originalName: t.originalName,
+              path: t.path,
+              mimeType: t.mimeType,
+              size: t.size,
+            })),
+          });
+          if (oldFp !== newFp) forgetRecentLibrary(oldFp);
+          touchRecentLibrary({
+            fingerprint: newFp,
+            name: nextProject.name,
+            trackCount: nextProject.tracks.length,
+            createdAt: nextProject.createdAt,
+          });
+          queueMicrotask(() => setRecentLibraries(listRecentLibraries()));
+          return nextProject;
+        });
+      }
+
+      report.durationMs = Math.round(
+        (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+          started,
+      );
+      return report;
+    },
+    [],
+  );
+
     (id) => {
       setProject((p) => {
         if (!p) return p;
