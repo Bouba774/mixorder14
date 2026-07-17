@@ -929,6 +929,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       updateTrack,
       setTrackAnalysis,
       renameTrack,
+      renameManyFiles,
       toggleFavorite,
       removeTracks,
       mergeAndRemoveDuplicates,
