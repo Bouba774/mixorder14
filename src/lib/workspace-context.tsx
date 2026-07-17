@@ -164,8 +164,23 @@ interface WorkspaceContextValue {
     patch: { bpm?: number | null; musicalKey?: string | null },
     source: BpmSourceId,
   ) => void;
-  /** Rename a track in place (records history + persists). */
+  /** Rename a track in place (display only — records history + persists). */
   renameTrack: (id: TrackId, nextName: string) => void;
+  /**
+   * Physically rename files on disk (native SAF) and synchronise the live
+   * library + snapshot + manifest so every downstream feature (playback,
+   * AutoMix, DiscDJ robot, search, duplicates, set builder) immediately
+   * sees the new names. On web (no persistent file handle) the rename is
+   * applied to the in-memory display name only and reported as such.
+   *
+   * The action is safe for very large libraries — the physical rename is
+   * performed one file at a time, but the React state and persistence
+   * writes are batched at the end.
+   */
+  renameManyFiles: (
+    entries: RenameFileEntry[],
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<RenameFilesReport>;
   /** Toggle the favorite flag on one track (persists). */
   toggleFavorite: (id: TrackId) => void;
   /** Remove tracks from the library (does NOT touch disk). */
