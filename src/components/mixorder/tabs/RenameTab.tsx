@@ -138,7 +138,7 @@ export function RenameTab() {
 
   if (!project) return null;
 
-  const { renameManyFiles } = useWorkspaceRename();
+  
 
   const applyPlan = async () => {
     if (!plan.safe || plan.totalChanged === 0) return;
