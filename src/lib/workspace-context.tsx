@@ -101,6 +101,32 @@ export interface ImportDiffSummary {
   unchanged: number;
 }
 
+/** Entry describing a single physical file rename request. */
+export interface RenameFileEntry {
+  id: TrackId;
+  /** New display base name (WITHOUT extension). */
+  nextBaseName: string;
+}
+
+/** Per-file failure record surfaced by the batch rename report. */
+export interface RenameFileError {
+  id: TrackId;
+  before: string;
+  after: string;
+  reason: string;
+}
+
+/** Report handed back after a physical batch rename completes. */
+export interface RenameFilesReport {
+  requested: number;
+  renamed: number;
+  skipped: number;
+  errors: RenameFileError[];
+  durationMs: number;
+  /** Mapping of trackId → { before, after } for undo history. */
+  applied: Array<{ trackId: TrackId; before: string; after: string }>;
+}
+
 interface WorkspaceContextValue {
   project: Project | null;
   /** True while durations / metadata are being read. */
