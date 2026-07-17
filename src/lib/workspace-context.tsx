@@ -697,6 +697,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const toggleFavorite = useCallback<WorkspaceContextValue["toggleFavorite"]>(
     (id) => {
       setProject((p) => {
         if (!p) return p;
