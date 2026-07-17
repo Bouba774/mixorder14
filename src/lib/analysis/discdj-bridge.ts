@@ -349,7 +349,7 @@ function createNativeBridge(): DiscDJBridge {
         title: r.title ?? null,
         durationSec,
         raw: r.raw ?? undefined,
-        zoneTexts: Array.isArray(r.zoneTexts) ? r.zoneTexts : [],
+        zoneTexts: Array.isArray(r.ocrVariants) ? r.ocrVariants : Array.isArray(r.zoneTexts) ? r.zoneTexts : [],
         parseReason: r.parseReason ?? null,
         sourceOk: r.sourceOk,
         orientationOk: r.orientationOk,
