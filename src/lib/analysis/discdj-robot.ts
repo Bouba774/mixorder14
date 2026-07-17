@@ -970,6 +970,7 @@ export function useDiscDJRobot() {
                   log("info", `Variante ${idx} : « ${shown} » → BPM ${bpm}`);
                 }
               },
+              (message) => log("info", message),
             );
             if (runIdRef.current !== runId) return;
 
@@ -1009,6 +1010,7 @@ export function useDiscDJRobot() {
             } else {
               missing.push({ index: i + 1, name: track.name });
               const reason = robust.reason ?? robust.reading.parseReason ?? "BPM illisible après plusieurs tentatives.";
+              const diagnosticImage = robust.reading.ocrInputImage ?? robust.reading.croppedImage ?? null;
               appendJournal(fingerprint, {
                 kind: "track",
                 ts: Date.now(),
@@ -1019,7 +1021,15 @@ export function useDiscDJRobot() {
                 durationMs: Date.now() - stepStart,
                 attempts: robust.attempts,
                 message: reason,
+                diagnosticImage,
+                diagnosticLabel: diagnosticImage ? `Capture OCR — ${track.name}` : null,
               });
+              if (diagnosticImage) {
+                appendRobotAction(fingerprint, "warning", `${progress} Capture OCR enregistrée pour vérifier visuellement la zone BPM.`, {
+                  diagnosticImage,
+                  diagnosticLabel: `Image réellement transmise à l'OCR — platine ${deck}`,
+                });
+              }
               log("warning", `${progress} BPM illisible pour « ${track.name} » — marqué à réanalyser.`);
               const snap = snapshot ?? { v: 1 as const, name: p.name, tracks: {} };
               snapshot = {
