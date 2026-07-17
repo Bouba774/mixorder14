@@ -350,6 +350,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     null,
   );
   const indexRunRef = useRef(0);
+  // Latest project accessible from async actions (renameManyFiles).
+  const projectRef = useRef<Project | null>(null);
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   const refreshRecentLibraries = useCallback(() => {
     setRecentLibraries(listRecentLibraries());
