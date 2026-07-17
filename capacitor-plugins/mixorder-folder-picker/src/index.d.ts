@@ -18,6 +18,15 @@ export interface FolderPickerPlugin {
    * previously granted via `pickFolder()`.
    */
   deleteFile(options: { uri: string }): Promise<void>;
+  /**
+   * Physically rename a file on disk by SAF URI. The `newName` MUST include
+   * the extension. Returns the new SAF URI and the effective display name
+   * (some providers sanitize the requested name).
+   */
+  renameFile(options: {
+    uri: string;
+    newName: string;
+  }): Promise<{ uri: string; name: string }>;
 }
 
 export declare const FolderPicker: FolderPickerPlugin;
