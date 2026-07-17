@@ -274,6 +274,51 @@ export function RenameTab() {
         />
       )}
 
+      {/* Final report — persists until the user starts a new rename. */}
+      {report && !progress && (
+        <section className="space-y-2 rounded-xl border border-border bg-surface p-3">
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4 text-primary" />
+            <p className="text-sm font-semibold">Rapport de renommage</p>
+            <button
+              onClick={() => setReport(null)}
+              className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              Fermer
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-2 text-[11px]">
+            <Stat label="Renommés" value={String(report.renamed)} />
+            <Stat label="Ignorés" value={String(report.skipped)} />
+            <Stat
+              label="Erreurs"
+              value={String(report.errors.length)}
+              tone={report.errors.length ? "warn" : "ok"}
+            />
+            <Stat
+              label="Durée"
+              value={
+                report.durationMs < 1000
+                  ? `${report.durationMs} ms`
+                  : `${(report.durationMs / 1000).toFixed(1)} s`
+              }
+            />
+          </div>
+          {report.errors.length > 0 && (
+            <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[10px]">
+              {report.errors.map((e, i) => (
+                <li key={i}>
+                  <p className="truncate font-medium text-destructive">
+                    {e.before} → {e.after}
+                  </p>
+                  <p className="text-muted-foreground">{e.reason}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {/* History */}
       {history.length > 0 && (
         <section className="rounded-xl border border-border bg-surface">
