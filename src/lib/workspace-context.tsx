@@ -32,6 +32,7 @@ import {
   type RecentLibrary,
 } from "./library/recent";
 import { Capacitor } from "@capacitor/core";
+import { FolderPicker } from "mixorder-folder-picker";
 
 /**
  * MixOrder workspace state.
