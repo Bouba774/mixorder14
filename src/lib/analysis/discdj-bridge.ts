@@ -426,6 +426,7 @@ interface NativeReading {
   title: string | null;
   duration: string | null;
   zoneTexts?: string[];
+  ocrVariants?: string[];
   parseReason?: string | null;
   sourceOk?: boolean;
   orientationOk?: boolean;
