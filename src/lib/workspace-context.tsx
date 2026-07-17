@@ -19,6 +19,7 @@ import {
   saveSnapshot,
   upsertTrackData,
 } from "./analysis/persistence";
+import type { AnalysisSnapshot } from "./analysis/types";
 import type { BpmSourceId } from "./analysis/types";
 import { toCamelot } from "./library/camelot";
 import { keyAnalysisEngine } from "./key-analysis/engine";
