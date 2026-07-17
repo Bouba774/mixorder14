@@ -1918,7 +1918,14 @@ async function waitForNextTrack(
     try {
       const r = await bridge.readBpm(deck, { bpmZone });
       if (r.endOfPlaylist) return;
-      const val = isPlausibleBpm(r.bpm) ? Math.round(r.bpm) : parseBpmRobust(r);
+      const variants = collectVariants(r);
+      let val: number | null = isPlausibleBpm(r.bpm) ? Math.round(r.bpm) : null;
+      if (val == null) {
+        for (const v of variants) {
+          const { bpm } = extractBpmFromVariant(v);
+          if (bpm != null) { val = bpm; break; }
+        }
+      }
       if (val != null && (previousBpm == null || val !== previousBpm)) return;
     } catch { /* keep polling */ }
     await bgSleep(bridge, 250);
